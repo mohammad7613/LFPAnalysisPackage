@@ -1,2 +1,2 @@
 # LFPAnalysisPackage
-This project is about bring up domain specific language for LFP analysis to run LFP analysis in more intuitive higher-level language. 
+This project aims to develop a domain specific language for LFP analyses, allowing them to designed and performed in a more readily comprehensible, higher-level language. 
