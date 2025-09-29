@@ -1,0 +1,10 @@
+# Normalize all text files
+* text=auto
+
+# Force LF endings for Python files
+*.py text eol=lf
+
+# Keep PDFs, binaries as-is
+*.pdf binary
+*.png binary
+*.jpg binary
