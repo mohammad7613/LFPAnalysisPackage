@@ -1,0 +1,15 @@
+# VS Code settings
+.vscode/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments (optional, if you use venv)
+.venv/
+env/
+
+
+.pdf
