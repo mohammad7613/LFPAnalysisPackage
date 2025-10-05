@@ -7,4 +7,7 @@ setup(
     description="A package for LFP data analysis pipelines",
     author="Mohammad Hossein Heidar Beni",
     author_email="mandyas7613@gmail.com",
+    install_requires=[
+        "PyYAML"
+    ],
 )
