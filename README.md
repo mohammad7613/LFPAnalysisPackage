@@ -14,7 +14,7 @@ To install the package in editable mode, run in terminal in the folder where set
 
 pip install -e .
 
-## Installation
+## Execution
 
 To excute your analysis, you need to run in the terminal
 
