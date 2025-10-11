@@ -1,0 +1,22 @@
+datasets:
+  - id: "rest_complexity"
+    format: "mat_cell"
+    path: "D:\\D\\ComplexityCheckCodes\\RawData\\PiplineCodes\\Complexity\\complexityLZCStandardizeChBaselineSessions.mat"
+
+features:
+  - id: "averageout_dim"
+    name: "averageout"
+    dataset: "rest_complexity"
+    preprocessors: []
+    args:
+      dim: 3
+
+
+visualizers:
+  - name: "trial_dynamic_feature_visualizer"
+    args: 
+      FeatureName: "Complexity"
+      legends: ["CA1","Thalamus","Striatum","PFC"]
+    inputs:
+      - feature: "averageout_dim"
+

@@ -1,0 +1,670 @@
+# 1fp_analysis/__init__.py
+"""Top-level package for the LFP analysis scaffold."""
+
+__all__ = ["data_access", "business_logic", "presentation"]
+
+# 1fp_analysis/main.py
+"""
+Main entry point for the LFP analysis package.
+
+This script orchestrates the analysis by using a configuration file
+to pass data through the three layers: data_access -> business_logic -> presentation.
+This ensures strict separation between layers.
+"""
+import yaml
+import numpy as np
+import matplotlib.pyplot as plt
+
+from lfp_analysis.data_access import PREPROCESSOR_REGISTRY, load_dummy_dataset
+from lfp_analysis.business_logic import FEATURE_REGISTRY
+from lfp_analysis.presentation import VISUALIZER_REGISTRY
+
+
+def run_analysis():
+    """
+    Orchestrates the entire LFP analysis workflow.
+
+    1. Loads configuration from config.yaml.
+    2. Loads dummy LFP data.
+    3. Preprocesses data and computes features via business logic.
+    4. Passes the computed features to the visualizer for plotting.
+    """
+    print("Starting LFP analysis pipeline...")
+
+    # Load configuration
+    try:
+        with open("config.yaml", "r") as f:
+            config = yaml.safe_load(f)
+    except FileNotFoundError:
+        print("Error: config.yaml not found. Please create one.")
+        return
+
+    # Load data from the Data Access Layer
+    print("Loading dummy dataset...")
+    lfp_data, stimulus_types, time, sfreq = load_dummy_dataset(
+        **config["dataset"]
+    )
+    print(f"Loaded LFP data with shape: {lfp_data.shape}")
+
+    # --- Data Access Layer: Preprocessing ---
+    preprocessor_name = config["preprocessor"]["name"]
+    preprocessor_args = config["preprocessor"]["args"]
+    print(f"Applying preprocessor: {preprocessor_name} with args: {preprocessor_args}")
+
+    if preprocessor_name not in PREPROCESSOR_REGISTRY:
+        print(f"Error: Preprocessor '{preprocessor_name}' not found in registry.")
+        return
+
+    preprocessor = PREPROCESSOR_REGISTRY[preprocessor_name](**preprocessor_args)
+    processed_lfp_data = preprocessor.process(lfp_data)
+
+    # --- Business Logic Layer: Feature Computation ---
+    # The main.py script now handles the orchestration, but the core
+    # logic of computing features remains in the business logic layer.
+    feature_name = config["feature"]["name"]
+    feature_args = config["feature"]["args"]
+    print(f"Computing feature: {feature_name} with args: {feature_args}")
+
+    if feature_name not in FEATURE_REGISTRY:
+        print(f"Error: Feature '{feature_name}' not found in registry.")
+        return
+
+    feature_function = FEATURE_REGISTRY[feature_name](**feature_args)
+
+    # The feature computation is now a distinct step before visualization.
+    # This ensures the visualizer never sees the raw LFP data.
+    visualizer_name = config["visualizer"]["name"]
+    visualizer_args = config["visualizer"]["args"]
+
+    if visualizer_name == "trial_timeline_visualizer":
+        # For the timeline visualizer, we need to compute features for each time window.
+        # This is also handled in the business logic layer before plotting.
+        window_ms = visualizer_args.get("time_window_ms", 100)
+        step_ms = visualizer_args.get("step_time_ms", 25)
+        computed_features = []
+        window_samples = int(window_ms / 1000.0 * sfreq)
+        step_samples = int(step_ms / 1000.0 * sfreq)
+        
+        for i in range(0, processed_lfp_data.shape[-1] - window_samples + 1, step_samples):
+            window_data = processed_lfp_data[..., i:i+window_samples]
+            computed_features.append(feature_function.compute(window_data))
+        computed_features = np.array(computed_features).T
+        print(f"Computed time-resolved features with shape: {computed_features.shape}")
+        
+    else:
+        # For other visualizers, compute features in a single pass.
+        computed_features = feature_function.compute(processed_lfp_data)
+        print(f"Computed features with shape: {computed_features.shape}")
+
+    # --- Presentation Layer: Visualization ---
+    print(f"Running visualizer: {visualizer_name}")
+
+    if visualizer_name not in VISUALIZER_REGISTRY:
+        print(f"Error: Visualizer '{visualizer_name}' not found in registry.")
+        return
+
+    visualizer = VISUALIZER_REGISTRY[visualizer_name](
+        sfreq=sfreq,
+        time=time,
+        **visualizer_args
+    )
+    # Pass the computed features and stimulus types directly to the visualizer.
+    # The visualizer no longer knows about the raw LFP data.
+    visualizer.visualize(computed_features, stimulus_types)
+
+    print("Analysis complete.")
+    plt.show() # Display the plot
+
+
+if __name__ == "__main__":
+    run_analysis()
+
+
+# config.yaml
+# Choose the plugins and their arguments.
+# This file demonstrates how to configure the new visualizers.
+
+preprocessor:
+  name: bandpass_filter
+  args:
+    low: 8.0
+    high: 12.0
+    sfreq: 1000.0
+
+feature:
+  name: band_power
+  args:
+    band: [8.0, 12.0]
+    sfreq: 1000.0
+
+# Example 1: Dynamic over trial
+visualizer:
+  name: trial_feature_visualizer
+  args: {}
+
+# Example 2: Dynamic over timeline of trial
+# To enable this, uncomment the following block and comment the one above.
+# visualizer:
+#   name: trial_timeline_visualizer
+#   args:
+#     time_window_ms: 100
+#     step_time_ms: 25
+
+# Dataset options for demo
+dataset:
+  n_sessions: 5
+  n_channels: 4
+  n_epochs: 20
+  n_samples: 500
+
+
+# lfp_analysis/data_access/__init__.py
+from .base import PREPROCESSOR_REGISTRY, register_preprocessor, Preprocessor
+from .loader import load_dummy_dataset, load_from_files
+from .filters import BandpassFilter
+
+__all__ = [
+    "PREPROCESSOR_REGISTRY",
+    "register_preprocessor",
+    "Preprocessor",
+    "load_dummy_dataset",
+    "load_from_files",
+    "BandpassFilter",
+]
+
+
+# lfp_analysis/data_access/base.py
+"""
+Data access base: defines Preprocessor ABC and a registry for plugins.
+"""
+from typing import Callable, Dict, Type
+import numpy as np
+
+PREPROCESSOR_REGISTRY: Dict[str, Type["Preprocessor"]] = {}
+
+
+def register_preprocessor(name: str) -> Callable:
+    """Decorator to register a Preprocessor class with a name."""
+    def decorator(cls: Type["Preprocessor"]) -> Type["Preprocessor"]:
+        PREPROCESSOR_REGISTRY[name] = cls
+        return cls
+    return decorator
+
+
+class Preprocessor:
+    """
+    Abstract preprocessor.
+
+    A preprocessor should accept and return numpy arrays with the following
+    canonical shapes:
+    Input: np.ndarray with shape (n_sessions, n_channels, n_epochs, n_samples)
+    Output: same shape
+    """
+    def process(self, data: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Apply preprocessing to the entire dataset.
+
+        Parameters
+        ----------
+        data : np.ndarray
+            LFP data with shape (sessions, channels, epochs, samples)
+
+        Returns
+        -------
+        np.ndarray
+            Processed data with the same shape.
+        """
+        raise NotImplementedError
+
+
+# lfp_analysis/data_access/loader.py
+"""Data loader utilities for the scaffold."""
+from typing import Tuple
+import numpy as np
+
+def load_dummy_dataset(
+    n_sessions: int = 2,
+    n_channels: int = 4,
+    n_epochs: int = 10,
+    n_samples: int = 500,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """
+    Create a synthetic dataset for demo/testing.
+
+    Returns
+    -------
+    lfp : np.ndarray
+        Shape (n_sessions, n_channels, n_epochs, n_samples)
+    stimulus_types : np.ndarray
+        Shape (n_sessions, n_epochs) with integer labels {1,2}
+    time : np.ndarray
+        1D array of time points for samples, length n_samples
+    sfreq : float
+        Sampling frequency (Hz)
+    """
+    sfreq = 1000.0
+    t = np.linspace(-0.2, 0.8, n_samples)
+
+    lfp = np.random.randn(n_sessions, n_channels, n_epochs, n_samples) * 1e-6
+    # add a simple evoked oscillation for condition 1
+    for s in range(n_sessions):
+        for e in range(n_epochs):
+            if (e % 2) == 0:  # condition 1
+                lfp[s, :, e, :] += 1e-6 * np.sin(2 * np.pi * 10 * t)
+
+    stimulus_types = (np.arange(n_epochs) % 2) + 1
+    stimulus_types = np.tile(stimulus_types, (n_sessions, 1))
+    
+    return lfp, stimulus_types, t, sfreq
+
+
+def load_from_files(path: str):
+    """
+    Placeholder: implement your dataset loader (e.g., npy files, mat files).
+    Keep the same output types as `load_dummy_dataset`.
+    """
+    raise NotImplementedError
+
+
+# lfp_analysis/data_access/filters.py
+"""Example preprocessors (filters)."""
+from typing import Any
+import numpy as np
+import scipy.signal as sps
+from .base import Preprocessor, register_preprocessor
+
+
+@register_preprocessor("bandpass_filter")
+class BandpassFilter(Preprocessor):
+    """
+    Simple zero-phase Butterworth bandpass applied to each channel/epoch
+    independently.
+    Input: (sessions, channels, epochs, samples)
+    Output: same shape
+    """
+    def __init__(self, low: float, high: float, sfreq: float, order: int = 4):
+        self.low = low
+        self.high = high
+        self.sfreq = sfreq
+        self.order = order
+
+    def _filter_1d(self, signal: np.ndarray) -> np.ndarray:
+        b, a = sps.butter(self.order, [self.low, self.high], btype="band", fs=self.sfreq)
+        return sps.filtfilt(b, a, signal)
+
+    def process(self, data: np.ndarray, **kwargs: Any) -> np.ndarray:
+        sessions, channels, epochs, samples = data.shape
+        out = np.empty_like(data)
+        for s in range(sessions):
+            for ch in range(channels):
+                for e in range(epochs):
+                    out[s, ch, e, :] = self._filter_1d(data[s, ch, e, :])
+        return out
+
+
+# lfp_analysis/business_logic/__init__.py
+from .base import FEATURE_REGISTRY, register_feature, FeatureFunction
+from .spectral import BandPowerFeature
+from .statistics import compare_two_conditions
+
+__all__ = [
+    "FEATURE_REGISTRY",
+    "register_feature",
+    "FeatureFunction",
+    "BandPowerFeature",
+    "compare_two_conditions",
+]
+
+
+# lfp_analysis/business_logic/base.py
+from typing import Callable, Dict, Type
+import numpy as np
+
+FEATURE_REGISTRY: Dict[str, Type["FeatureFunction"]] = {}
+
+
+def register_feature(name: str) -> Callable:
+    """Decorator to register a FeatureFunction class with a name."""
+    def decorator(cls: Type["FeatureFunction"]) -> Type["FeatureFunction"]:
+        FEATURE_REGISTRY[name] = cls
+        return cls
+    return decorator
+
+
+class FeatureFunction:
+    """
+    Abstract feature function.
+
+    Expected input shapes:
+    - single signal: 1D array (n_samples,)
+    - or full dataset: (n_sessions, n_channels, n_epochs, n_samples)
+
+    Concrete implementations should document which inputs they accept.
+    """
+    def compute(self, signal: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Compute the feature.
+        If signal is 1D: return a float (or 1-element array).
+        If signal is a full dataset: return array shaped (n_sessions,
+        n_epochs) or similar.
+        """
+        raise NotImplementedError
+
+
+# lfp_analysis/business_logic/spectral.py
+"""Spectral feature implementations (example: band power)."""
+from typing import Tuple
+import numpy as np
+from .base import register_feature, FeatureFunction
+from scipy.signal import welch
+
+@register_feature("band_power")
+class BandPowerFeature(FeatureFunction):
+    """
+    Band power computed with Welch's method.
+
+    Parameters
+    ----------
+    band : Tuple[float, float]
+        (low_hz, high_hz)
+    sfreq : float
+        sampling frequency
+    """
+    def __init__(self, band: Tuple[float, float], sfreq: float):
+        self.band = band
+        self.sfreq = sfreq
+
+    def _bandpower_1d(self, signal: np.ndarray) -> float:
+        freqs, psd = welch(signal, fs=self.sfreq, nperseg=min(256, len(signal)))
+        mask = (freqs >= self.band[0]) & (freqs <= self.band[1])
+        # Integrate PSD over band
+        return float(np.trapz(psd[mask], freqs[mask]))
+
+    def compute(self, signal: np.ndarray, **kwargs) -> np.ndarray:
+        """
+        Compute bandpower.
+
+        If signal has shape (n_samples,) -> return float.
+        If signal has shape (n_sessions, n_channels, n_epochs, n_samples) ->
+        return (n_sessions, n_epochs) averaged across channels.
+        """
+        if signal.ndim == 1:
+            return self._bandpower_1d(signal)
+        if signal.ndim == 4:
+            # Assume full dataset with shape (sessions, channels, epochs, samples)
+            sessions, channels, epochs, samples = signal.shape
+            out = np.zeros((sessions, epochs), dtype=float)
+            for s in range(sessions):
+                for e in range(epochs):
+                    # average channels for a single trial
+                    avg_signal = signal[s, :, e, :].mean(axis=0)
+                    out[s, e] = self._bandpower_1d(avg_signal)
+            return out
+        if signal.ndim == 3:
+            # Assume data for a single session or a specific time window
+            channels, epochs, samples = signal.shape
+            out = np.zeros((epochs,), dtype=float)
+            for e in range(epochs):
+                avg_signal = signal[:, e, :].mean(axis=0)
+                out[e] = self._bandpower_1d(avg_signal)
+            return out
+        if signal.ndim == 2:
+            # Assume data for a single epoch (channels, samples)
+            channels, samples = signal.shape
+            avg_signal = signal.mean(axis=0)
+            return np.array([self._bandpower_1d(avg_signal)])
+
+        # Handle other cases or raise an error for unsupported input shapes
+        raise ValueError(f"Unsupported signal shape for computation: {signal.shape}")
+
+
+# lfp_analysis/business_logic/statistics.py
+"""Simple statistical helpers."""
+from typing import Dict
+import numpy as np
+from scipy.stats import ttest_ind
+
+
+def compare_two_conditions(features_by_condition: Dict[str, np.ndarray]) -> Dict[str, float]:
+    """
+    Compare two groups ("cond1" and "cond2").
+
+    Expects:
+    features_by_condition = {"cond1": array_like, "cond2": array_like}
+
+    Returns dict with statistic and p-value.
+    """
+    a = np.asarray(features_by_condition["cond1"]).ravel()
+    b = np.asarray(features_by_condition["cond2"]).ravel()
+
+    stat, p = ttest_ind(a, b, equal_var=False)
+    return {"stat": float(stat), "p": float(p)}
+
+
+# lfp_analysis/presentation/__init__.py
+from .base import VISUALIZER_REGISTRY, register_visualizer, Visualizer
+from .trial_dynamics import TrialFeatureVisualizer
+from .trial_timeline import TrialTimelineVisualizer
+
+__all__ = [
+    "VISUALIZER_REGISTRY",
+    "register_visualizer",
+    "Visualizer",
+    "TrialFeatureVisualizer",
+    "TrialTimelineVisualizer",
+]
+
+
+# lfp_analysis/presentation/base.py
+"""Visualizer base and registry."""
+from typing import Callable, Dict, Type
+import numpy as np
+import matplotlib.pyplot as plt
+
+VISUALIZER_REGISTRY: Dict[str, Type["Visualizer"]] = {}
+
+
+def register_visualizer(name: str) -> Callable:
+    """Decorator to register a Visualizer class with a name."""
+    def decorator(cls: Type["Visualizer"]) -> Type["Visualizer"]:
+        VISUALIZER_REGISTRY[name] = cls
+        return cls
+    return decorator
+
+
+class Visualizer:
+    """Abstract visualizer."""
+    def __init__(self, sfreq: float, time: np.ndarray, **kwargs):
+        self.sfreq = sfreq
+        self.time = time
+
+    def visualize(self, features: np.ndarray, stimulus_types: np.ndarray):
+        """
+        Visualize the computed features.
+
+        Parameters
+        ----------
+        features : np.ndarray
+            Array of computed feature values. The shape depends on the
+            visualizer (e.g., (n_sessions, n_epochs) or (n_sessions, n_time_windows)).
+        stimulus_types : np.ndarray
+            Array of stimulus types with shape (n_sessions, n_epochs).
+        """
+        raise NotImplementedError
+
+
+def plot_grand_average_with_ci(
+    data: np.ndarray, x: np.ndarray, color: str, label: str
+):
+    """
+    Plots the grand average of a 2D array with a confidence interval.
+    This is a utility function intended for use by Visualizer classes.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        2D array of data, where rows are observations (e.g., sessions) and
+        columns are data points (e.g., trial indices or time points).
+    x : np.ndarray
+        The x-axis values for the plot.
+    color : str
+        The color to use for the plot.
+    label : str
+        The label for the plot legend.
+    """
+    n_observations = data.shape[0]
+    grand_avg = np.nanmean(data, axis=0)
+    ci = np.nanstd(data, axis=0) / np.sqrt(n_observations) * 1.96
+
+    plt.plot(x, grand_avg, color=color, label=label)
+    plt.fill_between(x, grand_avg - ci, grand_avg + ci, color=color, alpha=0.3)
+
+
+# lfp_analysis/presentation/trial_dynamics.py
+"""
+Visualizer for trial-by-trial dynamics.
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+
+from .base import Visualizer, register_visualizer, plot_grand_average_with_ci
+
+
+@register_visualizer("trial_feature_visualizer")
+class TrialFeatureVisualizer(Visualizer):
+    """
+    Plots the grand average of a feature over trials for different stimulus types.
+
+    X-axis: Trial index
+    Y-axis: Feature value with confidence interval over sessions
+    """
+    def visualize(self, features: np.ndarray, stimulus_types: np.ndarray):
+        """
+        Compute and plot the trial-by-trial feature dynamics.
+        """
+        n_sessions, n_epochs = features.shape
+        unique_stim_types = np.unique(stimulus_types)
+        
+        plt.figure(figsize=(12, 6))
+        plt.title('Feature Grand Average over Trials')
+        plt.xlabel('Trial Index')
+        plt.ylabel('Feature Value')
+
+        # Using a colormap for consistent colors
+        colors = plt.cm.viridis(np.linspace(0, 1, len(unique_stim_types)))
+        
+        for i, stim_type in enumerate(unique_stim_types):
+            # Select feature values for the current stimulus type
+            epochs_for_stim_mask = (stimulus_types == stim_type)
+            
+            features_per_session = []
+            max_trials = 0
+            for s in range(n_sessions):
+                session_features = features[s, epochs_for_stim_mask[s]]
+                features_per_session.append(session_features)
+                if len(session_features) > max_trials:
+                    max_trials = len(session_features)
+            
+            # Pad with NaNs to handle unequal number of trials per session
+            features_padded = np.full((n_sessions, max_trials), np.nan)
+            for s, session_features in enumerate(features_per_session):
+                features_padded[s, :len(session_features)] = session_features
+            
+            x = np.arange(1, features_padded.shape[1] + 1)
+            
+            # Call the shared helper function
+            plot_grand_average_with_ci(
+                data=features_padded,
+                x=x,
+                color=colors[i],
+                label=f'Stimulus Type {stim_type}'
+            )
+
+        plt.legend()
+        plt.grid(True)
+        print(f"Plotted 'Dynamic over trial' for {len(unique_stim_types)} stimulus types.")
+        
+
+# lfp_analysis/presentation/trial_timeline.py
+"""
+Visualizer for feature dynamics over the timeline of a trial.
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+
+from .base import Visualizer, register_visualizer, plot_grand_average_with_ci
+
+
+@register_visualizer("trial_timeline_visualizer")
+class TrialTimelineVisualizer(Visualizer):
+    """
+    Plots a feature's dynamic over the timeline of a trial.
+
+    The plot shows the grand average of the feature over sessions with
+    confidence intervals for selected stimulus types.
+    """
+    def __init__(self, sfreq: float, time: np.ndarray, time_window_ms: float, step_time_ms: float):
+        super().__init__(sfreq, time)
+        self.time_window = time_window_ms / 1000.0
+        self.step_time = step_time_ms / 1000.0
+        # Determine the time points for the plot from the global time array
+        window_samples = int(self.time_window * self.sfreq)
+        step_samples = int(self.step_time * self.sfreq)
+        self.time_points = [self.time[i:i + window_samples].mean()
+                            for i in range(0, len(self.time) - window_samples + 1, step_samples)]
+
+
+    def visualize(self, features: np.ndarray, stimulus_types: np.ndarray):
+        """
+        Visualize the pre-computed features for the trial timeline.
+        """
+        n_sessions, n_time_windows = features.shape
+        unique_stim_types = np.unique(stimulus_types)
+        n_epochs = stimulus_types.shape[1]
+        
+        # The features are provided as (n_sessions, n_time_windows * n_epochs)
+        # Reshape to (n_sessions, n_epochs, n_time_windows)
+        features = features.reshape(n_sessions, n_epochs, n_time_windows)
+
+        # Using a colormap for consistent colors
+        colors = plt.cm.viridis(np.linspace(0, 1, len(unique_stim_types)))
+        
+        plt.figure(figsize=(12, 6))
+        plt.title('Feature Grand Average over Trial Timeline')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Feature Value')
+
+        for i, stim_type in enumerate(unique_stim_types):
+            # Select epochs for the current stimulus type
+            epochs_for_stim_mask = (stimulus_types == stim_type)
+            features_for_stim = features[epochs_for_stim_mask]
+            
+            # features_for_stim now has shape (n_total_trials, n_time_windows)
+            # We need to average over sessions, so let's reshape again.
+            num_trials_per_session = [np.sum(epochs_for_stim_mask[s]) for s in range(n_sessions)]
+            max_trials = max(num_trials_per_session) if num_trials_per_session else 0
+            
+            # Create a 3D padded array: (n_sessions, max_trials, n_time_windows)
+            features_per_session_padded = np.full((n_sessions, max_trials, n_time_windows), np.nan)
+            
+            current_trial_idx = 0
+            for s in range(n_sessions):
+                num_trials = num_trials_per_session[s]
+                features_per_session_padded[s, :num_trials, :] = features_for_stim[current_trial_idx:current_trial_idx+num_trials, :]
+                current_trial_idx += num_trials
+            
+            # Now, average across trials for each session
+            features_averaged_per_session = np.nanmean(features_per_session_padded, axis=1)
+
+            # Call the shared helper function.
+            plot_grand_average_with_ci(
+                data=features_averaged_per_session,
+                x=self.time_points,
+                color=colors[i],
+                label=f'Stimulus Type {stim_type}'
+            )
+
+        plt.legend()
+        plt.grid(True)
+        print(f"Plotted 'Dynamic over timeline of trial' for {len(unique_stim_types)} stimulus types.")
+

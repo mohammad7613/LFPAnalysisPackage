@@ -1,0 +1,46 @@
+datasets:
+  - id: "novelty"
+    format: "mat"
+    path: "D:\\D\\ComplexityCheckCodes\\RawData\\PiplineCodes\\EpochedData\\Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
+  - id: "complexity_rest"
+    format: "mat_cell"
+    path: "D:\\D\\ComplexityCheckCodes\\RawData\\PiplineCodes\\Complexity\\complexityLZCStandardizeChBaselineSessions.mat"
+
+
+preprocessors:
+  - id: "selectsession"
+    name: "selectsession"
+    args:
+      session_indexs: [0,9,10,11,12,13,14,15,16,17,18,19,20,21]
+  - id: "zscore_norm"
+    name: "zscore"
+    args: {dim: -1}
+
+features:
+  - id: "complexity_novelty"
+    name: "Complexity"
+    dataset: "novelty"
+    preprocessors: ["selectsession","zscore_norm"]
+    args:
+      complexity_type: "SampEn"
+      arguments: 
+        m: 2
+        r: 0.15
+        tau: 1
+      channels: [0,1,2,3]
+      time_window: [1340,1740]
+  - id: "averageout_dim"
+    name: "averageout"
+    dataset: "complexity_rest"
+    preprocessors: []
+    args:
+      dim: 3
+
+visualizers:
+  - name: "trial_dynamic_feature_visualizer"
+    args: 
+      FeatureName: "Complexity"
+      legends: ["CA1","Thalamus","Striatum","PFC"]
+    inputs:
+      - feature: "complexity_novelty"
+      - feature: "averageout_dim"
