@@ -7,6 +7,8 @@ from ..feature import FeatureFunction
 from typing import Callable, Dict, Type
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.ndimage import uniform_filter1d  # for moving mean
+
 
 VISUALIZER_REGISTRY: Dict[str, Type["Visualizer"]] = {}
 
@@ -74,6 +76,7 @@ def plot_grand_average_with_ci(
     label: str,
     color: str = None,
     ax=None,
+    m: int = 20, #window size parameter 
 ):
     """
     Plot the grand average of a 2D array with a 95% confidence interval.
@@ -93,9 +96,18 @@ def plot_grand_average_with_ci(
     """
 
     n_observations = data.shape[0]
-    grand_avg = np.nanmean(data, axis=0)
-    ci = np.nanstd(data, axis=0) / np.sqrt(n_observations) * 1.96
 
+
+ # ---- Added movmean filter ----
+    if m > 1:
+    # data shape: (n_observations, n_points), smooth along time axis (axis=1)
+        data_smoothed = uniform_filter1d(data.astype(np.float64), size=m, axis=1, mode="nearest")
+    else:
+        data_smoothed = data.astype(np.float64)
+
+    # Now compute grand average and CI from the smoothed observations
+    grand_avg = np.nanmean(data_smoothed, axis=0)
+    ci = np.nanstd(data_smoothed, axis=0, ddof=0) / np.sqrt(n_observations) * 1.96
     # Choose the axis to draw on
     ax = ax or plt.gca()
 
