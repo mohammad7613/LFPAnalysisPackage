@@ -1,27 +1,37 @@
-dataset:
-  format: "mat"
-  path: "D:\\D\\ComplexityCheckCodes\\RawData\\PiplineCodes\\EpochedData\\Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV4.mat"
-  # path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
+datasets:
+  - id: "data"
+    format: "mat"
+    path: "C:\\Users\\Mohammadreza\\OneDrive\\Desktop\\neuroscience\\ODDBALL\\Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
+    # path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
 
 preprocessors:
-  - name: "selectsession"
+  - id: "selectsession"
+    name: "selectsession"
     args:
-      session_indexs: [9,10,11,12,13,14,15,16,17,18,19,20]
+      session_indexs: [8,10,16,17,27,28,29,30,0,1,2,3,4,5,6,7] 
+  - id: "zscore"
+    name: "zscore"
+    args: {dim: -1}
 
 features:
-  - name: DPLI
+  - id: "DPLI"
+    name: DPLI
+    dataset: "data"
+    preprocessors: ["selectsession","zscore"]
     args:
       sfreq: 2000
       x_lowcut: 5
-      x_highcut: 8
+      x_highcut: 10
       y_lowcut: 5
-      y_highcut: 8
-      channel_pairs: [[1,2],[2,3]]
-      time_window: [400,600]
+      y_highcut: 10
+      channel_pairs: [[0,2],[0,3]]
+      time_window: [1340,1740]
+
 
 visualizers:
-  - name: "trial_dyanmic_feature_visualizer"
-    args:
-      arguments:
-        FeatureName: DPLI
-        legends: ["ch1-2","ch2-3"]
+  - name: "trial_dynamic_feature_visualizer"
+    args: 
+      FeatureName: "DPLI"
+      legends: ["Hippocampus-Striatum","Hippocampus-PFC"]
+    inputs:
+      - feature: "DPLI"
