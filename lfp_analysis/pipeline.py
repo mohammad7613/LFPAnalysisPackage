@@ -1,6 +1,10 @@
 import numpy as np
 from typing import Dict, List, Any
 from lfp_analysis.registry.base import REGISTRIES
+import warnings
+# Turn numpy warnings into exceptions so debugger can catch them
+np.seterr(all='raise')
+warnings.filterwarnings('error')
 
 class LfpPipeline:
     """
@@ -58,15 +62,27 @@ class LfpPipeline:
             dataset_id = spec["dataset"]
 
             # get raw data from dataset
-            data = self.datasets[dataset_id]
+            data = self.datasets[dataset_id].copy()
+            
+            if isinstance(data, dict):
+                # optional preprocessors
+                signal = data["signal"]
+                for pid in spec.get("preprocessors", []):
+                    preproc = self.preprocessors[pid]
+                    signal = preproc.process(signal)
+                data["signal"] = signal
 
-            # optional preprocessors
-            for pid in spec.get("preprocessors", []):
-                preproc = self.preprocessors[pid]
-                data = preproc.process(data)
-
-            # compute feature
-            fdict["result"] = fdict["instance"].compute(data)
+                #compute feature
+                fdict["result"] = fdict["instance"].compute(**data)
+            else:
+                # optional preprocessors
+                for pid in spec.get("preprocessors", []):
+                    preproc = self.preprocessors[pid]
+                    data = preproc.process(data)
+                
+                #compute feature
+                fdict["result"] = fdict["instance"].compute(signal=data)
+                
             self.results[fid] = fdict["result"]
 
         # --- Run visualizers ---
@@ -94,6 +110,8 @@ class LfpPipeline:
         print("Visualizers:")
         for v in self.visualizers_cfg:
             inputs = [i["feature"] for i in v.get("inputs", [])]
-            print(f"  - {v['name']} <- {inputs}")
+            print(f"  - {v['name']}")
+            for input in inputs:
+                 print(f"  - ... <- {input} <- {self.features[input]["spec"]["preprocessors"]} <- {self.features[input]["spec"]["dataset"]}")
         print("=========================")
 
