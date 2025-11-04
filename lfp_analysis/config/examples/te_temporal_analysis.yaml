@@ -1,0 +1,61 @@
+datasets:
+  - id: "novelty"
+    format: "mat_events"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
+  - id: "complexity_rest"
+    format: "mat_cell"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/Complexity/complexitySampeEnStandardizeChBaselineSessions.mat"
+
+
+preprocessors:
+  - id: "selectsession"
+    name: "selectsession"
+    args:
+      session_indexs: [8,10,16,17,27,28,29,30,0,1,2,3,4,5,6,7]
+  - id: "zscore_norm"
+    name: "zscore"
+    args: {dim: -1}
+
+features:
+  - id: "te_temmporal"
+    name: "EventWindowedPairFeatureParallel"
+    dataset: "novelty"
+    preprocessors: ["zscore_norm"]
+    args:
+      feature_name: "TE_base"
+      window_size: 400
+      event_type: 1
+      channel_pairs: [[0,2],[3,2],[0,3]]
+      paradigm: "per_epoch"
+      overlap: 0.5
+      feature_args:
+        d_x: 1
+        d_y: 1
+        w_x: 30
+        w_y: 30
+  - id: "te_temmporal_1"
+    name: "EventWindowedPairFeatureParallel"
+    dataset: "novelty"
+    preprocessors: ["zscore_norm"]
+    args:
+      feature_name: "TE_base"
+      window_size: 400
+      event_type: 2
+      channel_pairs: [[0,2],[3,2],[0,3]]
+      paradigm: "per_epoch"
+      overlap: 0.5
+      feature_args:
+        d_x: 1
+        d_y: 1
+        w_x: 30
+        w_y: 30
+
+visualizers:
+  - name: "time_dynamic_feature_visualizer"
+    args: 
+      FeatureName: "DPLI"
+      legends: ["CA1-Straitum","CA1-Straitum","CA1-MPFC"]
+    inputs:
+      - feature: "te_temmporal"
+      - feature: "te_temmporal_1"
+

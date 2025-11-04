@@ -1,0 +1,56 @@
+datasets:
+  - id: "novelty"
+    format: "mat_events"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV4.mat"
+  - id: "complexity_rest"
+    format: "mat_cell"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/Complexity/complexitySampeEnStandardizeChBaselineSessions.mat"
+
+
+preprocessors:
+  - id: "selectsession"
+    name: "selectsession"
+    args:
+      session_indexs: [8,10,16,17,27,28,29,30,0,1,2,3,4,5,6,7]
+  - id: "zscore_norm"
+    name: "zscore"
+    args: {dim: -1}
+
+features:
+  - id: "complexity_temmporal"
+    name: "EventWindowedFeature"
+    dataset: "novelty"
+    preprocessors: ["zscore_norm"]
+    args:
+      feature_name: "Complexity_base"
+      window_size: 400
+      event_type: 1
+      feature_args:
+        complexity_type: "LZC"
+        arguments: 
+          num_levels: 3
+      overlap: 0.5 
+      paradigm: "average_epochs"
+  - id: "complexity_temmporal_1"
+    name: "EventWindowedFeatureParallel"
+    dataset: "novelty"
+    preprocessors: ["zscore_norm"]
+    args:
+      feature_name: "Complexity_base"
+      window_size: 400
+      event_type: 1
+      feature_args:
+        complexity_type: "LZC"
+        arguments:
+          num_levels: 3 
+      overlap: 0.5 
+      paradigm: "average_epochs"
+
+visualizers:
+  - name: "time_dynamic_feature_visualizer"
+    args: 
+      FeatureName: "Complexity"
+      legends: ["CA1","Thalamus","Striatum","PFC"]
+    inputs:
+      - feature: "complexity_temmporal"
+      - feature: "complexity_temmporal_1"

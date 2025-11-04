@@ -1,0 +1,67 @@
+datasets:
+  - id: "novelty"
+    format: "mat_events"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
+  - id: "complexity_rest"
+    format: "mat_cell"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/Complexity/complexitySampeEnStandardizeChBaselineSessions.mat"
+
+
+preprocessors:
+  - id: "selectsession"
+    name: "selectsession"
+    args:
+      session_indexs: [8,10,16,17,27,28,29,30,0,1,2,3,4,5,6,7]
+  - id: "selecttime"
+    name: "selecttime"
+    args:
+      start_index: 541 
+      end_index : 2941
+  - id: "zscore_norm"
+    name: "zscore"
+    args: {dim: -1}
+
+features:
+  - id: "complexity_temmporal_target"
+    name: "EventWindowedFeature"
+    dataset: "novelty"
+    preprocessors: ["selectsession","selecttime","zscore_norm"]
+    args:
+      feature_name: "Complexity_base"
+      window_size: 400
+      event_type: 2
+      feature_args:
+        complexity_type: "SampEn"
+        arguments: 
+          m: 2
+          r: 0.15
+          tau: 1
+      overlap: 0.5
+      channels: [2] 
+      paradigm: "average_epochs"
+  - id: "complexity_temmporal_standard"
+    name: "EventWindowedFeature"
+    dataset: "novelty"
+    preprocessors: ["selectsession","selecttime","zscore_norm"]
+    args:
+      feature_name: "Complexity_base"
+      window_size: 400
+      event_type: 1
+      feature_args:
+        complexity_type: "SampEn"
+        arguments: 
+          m: 2
+          r: 0.15
+          tau: 1
+      overlap: 0.5
+      channels: [2] 
+      paradigm: "average_epochs"
+
+visualizers:
+  - name: "time_dynamic_feature_visualizer"
+    args: 
+      FeatureName: "Complexity"
+      legends: ["Striatum"]
+    inputs:
+      - feature: "complexity_temmporal_target"
+      - feature: "complexity_temmporal_standard"
