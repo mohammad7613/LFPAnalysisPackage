@@ -34,7 +34,7 @@ class FeatureFunction(ABC):
     """
 
     @abstractmethod
-    def compute(self, signal: np.ndarray, **kwargs) -> np.ndarray:
+    def compute(self, signal: np.ndarray = None, **kwargs) -> np.ndarray:
         """
         Compute the feature.
 
