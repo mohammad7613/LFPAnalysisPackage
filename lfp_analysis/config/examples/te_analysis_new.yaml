@@ -1,0 +1,47 @@
+datasets:
+  - id: "novelty"
+    format: "mat"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
+  - id: "complexity_rest"
+    format: "mat_cell"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/Complexity/complexitySampeEnStandardizeChBaselineSessions.mat"
+
+
+preprocessors:
+  - id: "removesession"
+    name: "removesession"
+    args:
+      session_indexs: [22,23,24,25,26,27]
+      # session_indexs: [0,9,10,11,12,13,14,15,16,17,18,19,20,21]
+  - id: "selectsession"
+    name: "selectsession"
+    args:
+      # session_indexs: [22,23,24,25,26,27]
+      session_indexs: [8,10,16,17,27,28,29,30,0,1,2,3,4,5,6,7] 
+  - id: "zscore_norm"
+    name: "zscore"
+    args: {dim: -1}
+
+features:
+  - id: "te_novelty"
+    name: "TE"
+    dataset: "novelty"
+    preprocessors: ["selectsession"]
+    args:
+        d_x: 1
+        d_y: 1
+        w_x: 30
+        w_y: 30
+        channel_pairs: [[0,3],[3,0]]
+        # channel_pairs: [[0,2],[3,2],[0,3]]
+        time_window: [1340,1740]
+
+visualizers:
+  - name: "trial_dynamic_feature_visualizer"
+    args: 
+      FeatureName: "TE"
+      movemeansize: 20
+      title: "move_mean 20"
+      legends: ["HC-mPFC","mPFC-HC"]
+    inputs:
+      - feature: "te_novelty"

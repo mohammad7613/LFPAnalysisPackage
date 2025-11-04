@@ -17,31 +17,20 @@ preprocessors:
     args: {dim: -1}
 
 features:
-  - id: "complexity_novelty"
-    name: "Complexity"
+  - id: "ccdfc_novelty"
+    name: "cross-correlation-di-fc"
     dataset: "novelty"
-    preprocessors: ["selectsession","zscore_norm"]
+    preprocessors: ["selectsession"]
     args:
-      complexity_type: "SampEn"
-      arguments: 
-        m: 2
-        r: 0.15
-        tau: 1
-      channels: [0,1,2,3]
+      fs: 2000
+      channel_pairs: [[0,2],[3,2]]
+      band: [8,12] # Theta band
       time_window: [1340,1740]
-  - id: "averageout_dim"
-    name: "averageout"
-    dataset: "complexity_rest"
-    preprocessors: []
-    args:
-      dim: 3
 
 visualizers:
   - name: "trial_dynamic_feature_visualizer"
     args: 
       FeatureName: "Complexity"
-      movemeansize: 20
-      legends: ["CA1","Thalamus","Striatum","PFC"]
+      legends: ["CA1-Striatum","PFC-Striatum"]
     inputs:
-      - feature: "complexity_novelty"
-      - feature: "averageout_dim"
+      - feature: "ccdfc_novelty"

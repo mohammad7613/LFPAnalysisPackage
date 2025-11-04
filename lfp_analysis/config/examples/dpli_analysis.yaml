@@ -1,8 +1,8 @@
 datasets:
   - id: "data"
     format: "mat"
-    path: "C:\\Users\\Mohammadreza\\OneDrive\\Desktop\\neuroscience\\ODDBALL\\Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
-    # path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
+    # path: "C:\\Users\\Mohammadreza\\OneDrive\\Desktop\\neuroscience\\ODDBALL\\Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
 
 preprocessors:
   - id: "selectsession"
@@ -24,7 +24,7 @@ features:
       x_highcut: 10
       y_lowcut: 5
       y_highcut: 10
-      channel_pairs: [[0,2],[0,3]]
+      channel_pairs: [[0,2],[3,2],[0,3]]
       time_window: [1340,1740]
 
 
@@ -32,6 +32,8 @@ visualizers:
   - name: "trial_dynamic_feature_visualizer"
     args: 
       FeatureName: "DPLI"
-      legends: ["Hippocampus-Striatum","Hippocampus-PFC"]
+      #CI: None
+      movemeansize: 20
+      legends: ["Hippocampus-Striatum","PFC-Striatum","Hippocampus-PFC"]
     inputs:
       - feature: "DPLI"
