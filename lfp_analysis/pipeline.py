@@ -14,12 +14,12 @@ class LfpPipeline:
     according to a declarative config.
     """
 
-    def __init__(self, datasets_cfg, preprocessors_cfg, features_cfg, visualizers_cfg):
+    def __init__(self, datasets_cfg, preprocessors_cfg, features_cfg, visualizers_cfg, storages_cfg):
         self.datasets_cfg = datasets_cfg
         self.preprocessors_cfg = preprocessors_cfg
         self.features_cfg = features_cfg
         self.visualizers_cfg = visualizers_cfg
-
+        self.storages_cfg = storages_cfg
         # Internal containers
         self.datasets: Dict[str, Any] = {}
         self.preprocessors: Dict[str, Any] = {}
@@ -97,6 +97,18 @@ class LfpPipeline:
             ]
 
             vis.visualize(input_features)
+        
+        for saver_spec in self.storages_cfg:
+            saver_cls = REGISTRIES["storages"][saver_spec["name"]]
+            saver = saver_cls(saver_spec.get("args", {}))
+
+            # gather all input feature results
+            input_features = [
+                {"id": inp, "data": self.results[inp]}
+                for inp in saver_spec.get("args", [])
+            ]
+            saver.store(input_features)
+
 
     # ------------------------------------------------------------------
     # UTILITIES

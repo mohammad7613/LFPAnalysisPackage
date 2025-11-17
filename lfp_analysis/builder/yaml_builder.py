@@ -10,6 +10,7 @@ def build_from_yaml(config_path: str):
         config.get("preprocessors", []),
         config.get("features", []),
         config.get("visualizers", []),
+        config.get("storages", [])
     )
     pipeline.build()
     return pipeline

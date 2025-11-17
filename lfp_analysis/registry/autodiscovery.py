@@ -4,6 +4,7 @@ import pkgutil
 import lfp_analysis.feature
 import lfp_analysis.preprocess
 import lfp_analysis.visualization
+import lfp_analysis.storage
 
 def autodiscover():
     """
@@ -14,6 +15,7 @@ def autodiscover():
         lfp_analysis.feature,
         lfp_analysis.preprocess,
         lfp_analysis.visualization,
+        lfp_analysis.storage
     ]
 
     for pkg in packages:

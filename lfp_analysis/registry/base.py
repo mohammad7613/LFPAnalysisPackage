@@ -5,7 +5,8 @@ REGISTRIES = {
     "features": {},
     "visualizers": {},
     "loaders": {},   # optional: dataset loaders
-    "statistics": {}
+    "statistics": {},
+    "storages": {}
 }
 
 def register(registry_name: str, key: str):
