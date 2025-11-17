@@ -1369,6 +1369,64 @@ class EventWindowedPairFeatureParallel(FeatureFunction):
         return np.stack(results, axis=0)
 
 
+@register("features", "EventERP")
+class EventERP(FeatureFunction):
+    """
+    Compute ERPs per session & channel, averaged over epochs matching `event_type`.
+
+    Input:
+        signal : np.ndarray shaped (n_sessions, n_channels, n_epochs, n_samples)
+        events : np.ndarray shaped (n_sessions, n_epochs)
+                 (categorical/integers indicating epoch event types)
+        event_type : scalar or list/tuple of event codes to include
+
+    Output:
+        np.ndarray shaped (n_sessions, n_channels, n_samples, 2)
+        where last dim [:, :, :, 0] = mean ERP, [:, :, :, 1] = std across epochs
+    """
+
+    def __init__(self, event_type: int, channels: list):
+        self.event_type = (
+            event_type if isinstance(event_type, (list, tuple, np.ndarray)) else [event_type]
+        )
+        self.channels = channels
+
+    def compute(self, signal: np.ndarray = None, events: np.ndarray = None, **kwargs) -> np.ndarray:
+        if signal is None:
+            raise ValueError("EventERP requires `signal` with shape (S, C, E, T).")
+        if events is None:
+            raise ValueError("EventERP requires `events` with shape (S, E).")
+        if signal.ndim != 4:
+            raise ValueError(f"`signal` must be 4D (S, C, E, T); got shape {signal.shape}.")
+        if events.ndim != 2:
+            raise ValueError(f"`events` must be 2D (S, E); got shape {events.shape}.")
+
+        n_sessions, n_channels, n_epochs, n_samples = signal.shape
+        if events.shape != (n_sessions, n_epochs):
+            raise ValueError(
+                f"`events` shape {events.shape} must be (n_sessions, n_epochs)=({n_sessions}, {n_epochs})."
+            )
+        n_channels = len(self.channels)
+        out = np.full((n_sessions, n_channels, n_samples, 2), np.nan, dtype=float)
+
+        # Compute mean & std across selected epochs per session/channel
+        for s in range(n_sessions):
+            for ch in self.channels:
+                ep_mask = np.isin(events[s], self.event_type)  # (n_epochs,)
+                if not np.any(ep_mask):
+                    # leave NaNs if no matching epochs
+                    continue
+
+                # selected: (n_channels, n_selected_epochs, n_samples)
+                selected = signal[s, ch, ep_mask, :]
+                # ERP mean/std across epochs (axis=1)
+                mean_erp = np.mean(selected, axis=0)                  # (n_channels, n_samples)
+                std_erp  = np.std(selected, axis=0, ddof=0)           # (n_channels, n_samples)
+
+                out[s, ch, :, 0] = mean_erp
+                out[s, ch, :, 1] = std_erp
+
+        return out
 
 
 @register("features","cross-correlation-di-fc")
