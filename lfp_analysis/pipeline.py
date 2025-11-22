@@ -125,5 +125,11 @@ class LfpPipeline:
             print(f"  - {v['name']}")
             for input in inputs:
                  print(f"  - ... <- {input} <- {self.features[input]["spec"]["preprocessors"]} <- {self.features[input]["spec"]["dataset"]}")
+        print("Storages:")
+        for v in self.storages_cfg:
+            inputs = [i for i in v.get("args", [])]
+            print(f"  - {v['name']}")
+            for input in inputs:
+                 print(f"  - ... <- {input} <- {self.features[input]["spec"]["preprocessors"]} <- {self.features[input]["spec"]["dataset"]}")
         print("=========================")
 

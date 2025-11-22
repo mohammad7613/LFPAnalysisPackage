@@ -3,24 +3,6 @@ from typing import Callable, Dict, Type, Any
 import numpy as np
 from abc import ABC, abstractmethod
 
-# FEATURE_REGISTRY: Dict[str, Type["FeatureFunction"]] = {}
-
-# StatisticalTest_REGISTRY: Dict[str, Type["StatisticalTest"]] = {}
-
-
-# def register_feature(name: str) -> Callable:
-#     def decorator(cls: Type["FeatureFunction"]) -> Type["FeatureFunction"]:
-#         FEATURE_REGISTRY[name] = cls
-#         return cls
-#     return decorator
-
-
-# def register_statistical_test(name: str) -> Callable:
-#     def decorator(cls: Type["StatisticalTest"]) -> Type["StatisticalTest"]:
-#         StatisticalTest_REGISTRY[name] = cls
-#         return cls
-#     return decorator
-
 
 class FeatureFunction(ABC):
     """

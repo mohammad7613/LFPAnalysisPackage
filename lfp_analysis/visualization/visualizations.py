@@ -114,7 +114,7 @@ class TimeDynamicFeatureVisualizer(Visualizer):
  
     
     def visualize(self, data: list):
-        scheme = self.arguments["scheme"]
+        scheme = self.arguments.get("scheme","same_figure")
         func = self.visualize_scheme[scheme]
         # bind the function to this instance before calling
         bound = func.__get__(self, self.__class__)
@@ -221,6 +221,7 @@ class TimeDynamicFeatureVisualizer(Visualizer):
         feature_name = args.get("FeatureName", "Feature")
         level = args.get("CI", None)
         m = args.get("movemeansize", 1)
+        title = args.get("title","")
         legends = args.get("legends", [])
         x_range = args.get("xrange",[])
         shape_subplot = args.get("ShapeSubplot", (1, len(data)))
@@ -243,7 +244,7 @@ class TimeDynamicFeatureVisualizer(Visualizer):
         fig, ax = plt.subplots(figsize=(8, 5))
 
         # Optional: overall title/labels (can be adjusted per your taste)
-        ax.set_title(f"All {feature_name}s")
+        ax.set_title(title)
         ax.set_xlabel("Window Index")
         ax.set_ylabel(feature_name)
 

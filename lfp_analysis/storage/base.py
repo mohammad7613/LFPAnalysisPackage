@@ -1,7 +1,7 @@
 # visualization/plot_base.py
 from abc import ABC, abstractmethod
 
-from typing import Any,Callable, Dict, Type, dict
+from typing import Any,Callable, Dict, Type
 import numpy as np
 
 

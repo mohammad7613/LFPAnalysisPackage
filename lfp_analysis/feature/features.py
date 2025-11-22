@@ -299,7 +299,33 @@ class TE(FeatureFunction):
         return ee.cmi(Y_t, X_lagged, Y_lagged)
 
 
-
+@register("features","band_power_base")
+class BandPowerFeature(FeatureFunction):
+    """
+    Band power computed with Welch's method.
+    Parameters
+    ----------
+    band : Tuple[float, float]
+    (low_hz, high_hz)
+    sfreq : float
+    sampling frequency
+    """
+    def __init__(self, band: Tuple[float, float], sfreq: float):
+        self.band = band
+        self.sfreq = sfreq
+    def _bandpower_1d(self, signal: np.ndarray) -> float:
+        freqs, psd = welch(signal, fs=self.sfreq, nperseg=min(256, len(signal)))
+        mask = (freqs >= self.band[0]) & (freqs <= self.band[1])
+         # Integrate PSD over band
+        return float(np.trapezoid(psd[mask], freqs[mask]))
+    def compute(self, signal, **kwargs) -> np.ndarray:
+        """Compute bandpower.
+        If `signal` has shape (n_samples,) -> return float.
+        If `signal` has shape (n_sessions, n_channels, n_epochs, n_samples) ->
+        return (n_sessions, n_epochs) averaged across channels.
+        """
+        assert signal.ndim == 1
+        return self._bandpower_1d(signal)
 
 
 
@@ -748,6 +774,136 @@ class averageout(FeatureFunction):
 
 
 
+#### Features for time-trial representation
+
+@register("features","TimeTrial")
+class TimeTrial(FeatureFunction):
+    def __init__(self, feature_name: str,
+                 feature_args: dict,
+                 window_size: int,
+                 channels: List[int] = [],
+                 overlap: float = 0.5, parallel: bool = True, n_jobs: int = -1):
+        
+        super().__init__()
+        self.feature_name = feature_name
+        self.feature_args = feature_args
+        self.window_size = window_size
+        self.overlap = overlap
+        self.parallel = parallel
+        self.n_jobs = n_jobs
+        self.channels = channels
+
+                # Retrieve registered feature constructor
+        self.feature = REGISTRIES["features"][feature_name](**feature_args)
+    def compute(self, signal = None, **kwargs):
+
+        n_sessions, n_channels, n_epochs, n_samples = signal.shape
+        step = int(self.window_size * (1 - self.overlap))
+        n_windows = max(1, (n_samples - self.window_size) // step + 1)
+
+        """Vectorized window slicing and feature computation."""
+        step = int(self.window_size * (1 - self.overlap))
+        # Get all sliding windows efficiently
+        windows = sliding_window_view(np.arange(n_samples),self.window_size)[::step]
+        if self.channels != []:
+            signal = signal[:,self.channels,:,:]
+            n_channels = len(self.channels)
+
+        results = np.zeros((n_sessions, n_channels, n_epochs, n_windows), dtype=float)
+     
+        if self.parallel:
+            def compute_per_window(s,ch,e,w):
+                window_sampels = windows[w]
+                feature_window = self.feature.compute(signal[s,ch,e,window_sampels])
+                return feature_window
+
+            # Parallel over session × channel; keep original tensor shape
+            flat_results = Parallel(n_jobs=self.n_jobs)(
+                delayed(compute_per_window)(s, ch, e, w)
+                for s in range(n_sessions)
+                for ch in range(n_channels)
+                for e in range(n_epochs)
+                for w in range(n_windows)
+            )
+            results = np.asarray(flat_results, dtype=float).reshape(
+                n_sessions, n_channels, n_epochs, n_windows
+            )
+        else:
+            for s in range(n_sessions):
+                for ch in range(n_channels):
+                    for e in range(n_epochs):
+                        for w in range(n_windows):
+                            window_sampels = windows[w]
+                            results[s,ch,e,w] = self.feature.compute(signal[s,ch,e,window_sampels])
+        return results
+
+
+
+@register("features","TimeTrialPair")
+class TimeTrial(FeatureFunction):
+    def __init__(self, feature_name: str,
+                 feature_args: dict,
+                 window_size: int,
+                 channel_pairs: List[Tuple],
+                 overlap: float = 0.5, parallel: bool = True, n_jobs: int = -1):
+        
+        super().__init__()
+        self.feature_name = feature_name
+        self.feature_args = feature_args
+        self.window_size = window_size
+        self.overlap = overlap
+        self.parallel = parallel
+        self.n_jobs = n_jobs
+        assert channel_pairs is not None, "channel_pairs must be provided for TimeTrialPair"
+        self.channel_pairs = channel_pairs
+
+                # Retrieve registered feature constructor
+        self.feature = REGISTRIES["features"][feature_name](**feature_args)
+    def compute(self, signal = None, **kwargs):
+
+        n_sessions, n_channels, n_epochs, n_samples = signal.shape
+        step = int(self.window_size * (1 - self.overlap))
+        n_windows = max(1, (n_samples - self.window_size) // step + 1)
+
+        """Vectorized window slicing and feature computation."""
+        step = int(self.window_size * (1 - self.overlap))
+        # Get all sliding windows efficiently
+        windows = sliding_window_view(np.arange(n_samples),self.window_size)[::step]
+
+
+        results = np.zeros((n_sessions, len(self.channel_pairs), n_epochs, n_windows), dtype=float)
+     
+        if self.parallel:
+            def compute_per_window(s,ch,e,w):
+                ch1 = ch[0]
+                ch2 = ch[1]
+                window_sampels = windows[w]
+                feature_window = self.feature.compute(signal1 = signal[s,ch1,e,window_sampels],signal2 = signal[s,ch2,e,window_sampels])
+                return feature_window
+
+            # Parallel over session × channel; keep original tensor shape
+            flat_results = Parallel(n_jobs=self.n_jobs)(
+                delayed(compute_per_window)(s, ch, e, w)
+                for s in range(n_sessions)
+                for ch in self.channel_pairs
+                for e in range(n_epochs)
+                for w in range(n_windows)
+            )
+            results = np.asarray(flat_results, dtype=float).reshape(
+                n_sessions, len(self.channel_pairs), n_epochs, n_windows
+            )
+        else:
+            for s in range(n_sessions):
+                for ch in self.channel_pairs:
+                    for e in range(n_epochs):
+                        for w in range(n_windows):
+                            ch1 = ch[0]
+                            ch2 = ch[1]
+                            window_sampels = windows[w]
+                            results[s,ch,e,w] = self.feature.compute(signal1 = signal[s,ch1,e,window_sampels],signal2 = signal[s,ch2,e,window_sampels])
+        return results
+
+
 #### Features for time_dynamics
 @register("features", "WindowedFeature")
 class WindowedFeature(FeatureFunction):
@@ -988,10 +1144,10 @@ class EventWindowedFeature(FeatureFunction):
                 out[s, :, :] = np.nan
                 continue
 
-            for ch in self.channels:
+            for i,ch in enumerate(self.channels):
                 epochs = selected[ch]  # (n_selected_epochs, n_samples)
                 feats = [self._compute_over_windows(ep) for ep in epochs]
-                out[s, ch] = np.nanmean(np.vstack(feats), axis=0)
+                out[s, i] = np.nanmean(np.vstack(feats), axis=0)
 
         return out
 
