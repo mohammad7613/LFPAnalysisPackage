@@ -1,0 +1,81 @@
+# Example configuration showcasing composite visualization
+# Update the dataset path below to point to a local file compatible with the
+# chosen loader (e.g., mat_cell or npy). The rest of the config demonstrates
+# how to layer multiple visual outputs using the CompositeVisualizer.
+
+datasets:
+  - id: "novelty"
+    format: "mat"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
+    # path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_2_epoched_preprocessed_novelty0-raw_dataV4.mat"
+
+  - id: "complexity_rest"
+    format: "mat_cell"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/Complexity/complexitySampeEnStandardizeChBaselineSessions.mat"
+
+
+
+preprocessors:
+  - id: "selectsession"
+    name: "selectsession"
+    args:
+      session_indexs: [9,10,11,12,13,14,15,16,17,18,19,20]
+  - id: "zscore_norm"
+    name: "zscore"
+    args: {dim: -1}
+
+features:
+  - id: "complexity_novelty"
+    name: "Complexity"
+    dataset: "novelty"
+    preprocessors: ["selectsession","zscore_norm"]
+    args:
+      complexity_type: "SampEn"
+      arguments: 
+        m: 2
+        r: 0.15
+        tau: 1
+      channels: [0,1,2,3]
+      time_window: [1340,1740]
+  - id: "averageout_dim"
+    name: "averageout"
+    dataset: "complexity_rest"
+    preprocessors: []
+    args:
+      dim: 3
+
+visualizers:
+  - name: "composite_visualizer"
+    args:
+      title: "Complexity Overview"
+      share_figure: true
+      tight_layout: true
+      layout:
+        rows: 1
+        cols: 2
+      figsize: [14, 5]
+    children:
+      - name: "trial_dynamic_feature_visualizer"
+        args:
+          FeatureName: "Complexity"
+          title: "Trial Evolution"
+          legends: ["CA1", "Thalamus", "Striatum", "PFC"]
+          movemeansize: 5
+          # CI: 0.95
+          ShapeSubplot: [1, 1]
+        inputs:
+          - feature: "averageout_dim"
+
+      - name: "time_dynamic_feature_visualizer"
+        args:
+          FeatureName: "Complexity"
+          title: "Temporal Windows"
+          scheme: "same_figure"    # or "separate_figure"
+          legends: ["CA1", "Thalamus", "Striatum", "PFC"]
+          movemeansize: 3
+          # CI: 0.95
+          xrange: [0, 1]
+        inputs:
+          - feature: "averageout_dim"
+
+storages: []

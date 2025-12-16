@@ -1,10 +1,9 @@
 # visualization/plot_base.py
 from abc import ABC, abstractmethod
 
-from typing import Any
+from typing import Any, Callable, Dict, Optional, Type
 import matplotlib.pyplot as plt
 from ..feature import FeatureFunction
-from typing import Callable, Dict, Type
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import uniform_filter1d  # for moving mean
@@ -24,20 +23,27 @@ class Visualizer(ABC):
     def __init__(self, arguments: Dict):
         super().__init__()
         self.arguments = arguments
+
     @abstractmethod
-    def visualize(self,data : list):
-        ### It contains a dictionary with "feature" 
-        ### The additional arugment such as labels and 
-        # channels or the figure sizes should be defined in arguments dictionary ###
-        pass
-    
-    def input_checker(self,data: list)-> bool:
-        ### It needs to implemented in each subclass ###
+    def visualize(self, data: list, payload: Optional[Dict[str, Any]] = None):
+        """Render the visualization for the provided inputs.
+
+        Parameters
+        ----------
+        data : list
+            List of dicts containing feature ids and their numpy payloads.
+        payload : dict, optional
+            Scratchpad passed by the pipeline/composite nodes (e.g., matplotlib axes,
+            shared figures, shared metadata, or utility callbacks).
+        """
+
+    def input_checker(self, data: list) -> bool:
+        # Override when a custom validation is required.
         return True
 
-    def run(self,data:list):
+    def run(self, data: list, payload: Optional[Dict[str, Any]] = None):
         if self.input_checker(data):
-            self.visualize(data)
+            self.visualize(data, payload)
         else:
             raise KeyError("The input list does not have a correct structure")
 

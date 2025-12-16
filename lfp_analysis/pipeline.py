@@ -1,6 +1,7 @@
 import numpy as np
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from lfp_analysis.registry.base import REGISTRIES
+from lfp_analysis.visualization.spec import build_visualization_spec, VisualizationSpec
 import warnings
 # Turn numpy warnings into exceptions so debugger can catch them
 np.seterr(all='raise')
@@ -20,6 +21,9 @@ class LfpPipeline:
         self.features_cfg = features_cfg
         self.visualizers_cfg = visualizers_cfg
         self.storages_cfg = storages_cfg
+        self.visualizer_specs: List[VisualizationSpec] = [
+            build_visualization_spec(cfg) for cfg in visualizers_cfg
+        ]
         # Internal containers
         self.datasets: Dict[str, Any] = {}
         self.preprocessors: Dict[str, Any] = {}
@@ -86,17 +90,8 @@ class LfpPipeline:
             self.results[fid] = fdict["result"]
 
         # --- Run visualizers ---
-        for vis_spec in self.visualizers_cfg:
-            vis_cls = REGISTRIES["visualizers"][vis_spec["name"]]
-            vis = vis_cls(vis_spec.get("args", {}))
-
-            # gather all input feature results
-            input_features = [
-                {"id": inp["feature"], "data": self.results[inp["feature"]]}
-                for inp in vis_spec.get("inputs", [])
-            ]
-
-            vis.visualize(input_features)
+        for vis_spec in self.visualizer_specs:
+            self._run_visualizer(vis_spec)
         
         for saver_spec in self.storages_cfg:
             saver_cls = REGISTRIES["storages"][saver_spec["name"]]
@@ -108,6 +103,25 @@ class LfpPipeline:
                 for inp in saver_spec.get("args", [])
             ]
             saver.store(input_features)
+
+    def _run_visualizer(self, vis_spec: VisualizationSpec, payload: Optional[Dict[str, Any]] = None):
+        """Instantiate and execute a visualizer spec (recursively for composites)."""
+
+        vis_cls = REGISTRIES["visualizers"][vis_spec.name]
+        vis = vis_cls(vis_spec.args)
+        input_features = self._gather_visualizer_inputs(vis_spec)
+
+        exec_payload = dict(payload or {})
+        exec_payload["run_child"] = self._run_visualizer
+        exec_payload["spec"] = vis_spec
+
+        vis.visualize(input_features, exec_payload)
+
+    def _gather_visualizer_inputs(self, vis_spec: VisualizationSpec) -> List[Dict[str, Any]]:
+        return [
+            {"id": inp["feature"], "data": self.results[inp["feature"]]}
+            for inp in vis_spec.inputs
+        ]
 
 
     # ------------------------------------------------------------------

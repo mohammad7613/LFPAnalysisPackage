@@ -14,6 +14,58 @@ def register_method(action_registry):
     return deco
 
 
+@register("visualizers", "composite_visualizer")
+class CompositeVisualizer(Visualizer):
+    """Compose multiple child visualizers using a shared figure/layout."""
+
+    def __init__(self, arguments):
+        super().__init__(arguments)
+
+    def visualize(self, data: list, payload=None):
+        payload = payload or {}
+        spec = payload.get("spec")
+        children = getattr(spec, "children", []) if spec else []
+        if not children:
+            return
+
+        runner = payload.get("run_child")
+        if runner is None:
+            raise RuntimeError("CompositeVisualizer requires access to run_child callback")
+
+        layout = self.arguments.get("layout", {})
+        rows = int(layout.get("rows", 1))
+        cols = int(layout.get("cols", max(1, len(children))))
+        share_figure = self.arguments.get("share_figure", True)
+        figsize = tuple(self.arguments.get("figsize", (6 * cols, 4 * rows)))
+        show = self.arguments.get("show", True)
+
+        if share_figure:
+            fig, axes = plt.subplots(rows, cols, figsize=figsize)
+            axes = np.atleast_1d(axes).reshape(-1)
+            title = self.arguments.get("title")
+            if title:
+                fig.suptitle(title)
+        else:
+            fig = None
+            axes = []
+
+        for idx, child in enumerate(children):
+            child_payload = dict(payload)
+            child_payload.pop("spec", None)
+            child_payload["defer_show"] = share_figure
+            if share_figure:
+                target_axis = axes[min(idx, len(axes) - 1)]
+                child_payload["axis"] = target_axis
+                child_payload["figure"] = fig
+            runner(child, child_payload)
+
+        if share_figure:
+            if self.arguments.get("tight_layout", True):
+                fig.tight_layout()
+            if show and not self.arguments.get("defer_show", False):
+                plt.show()
+
+
 @register("visualizers","trial_dynamic_feature_visualizer")
 class TrialDynamicFeatureVisualizer(Visualizer):
     """
@@ -24,7 +76,7 @@ class TrialDynamicFeatureVisualizer(Visualizer):
     """
     def __init__(self, arguments):
         super().__init__(arguments)
-    def visualize(self, data: list):
+    def visualize(self, data: list, payload=None):
         """
         Visualize multiple features in a subplot grid.
         
@@ -39,6 +91,10 @@ class TrialDynamicFeatureVisualizer(Visualizer):
         # 1. Parse arguments
         # ----------------------------------------------------------------------
         args = self.arguments
+        payload = payload or {}
+        provided_axis = payload.get("axis")
+        provided_fig = payload.get("figure")
+        defer_show = payload.get("defer_show", False)
         feature_name = args.get("FeatureName", "Feature")
         level = args.get("CI",None)
         m = args.get("movemeansize", 1)
@@ -52,24 +108,28 @@ class TrialDynamicFeatureVisualizer(Visualizer):
             shape_subplot = tuple(shape_subplot)
 
         n_rows, n_cols = shape_subplot
-        n_total = n_rows * n_cols
         n_inputs = len(data)
 
-        if n_inputs > n_total:
-            raise ValueError(f"ShapeSubplot {shape_subplot} can show max {n_total} features, "
-                            f"but {n_inputs} were given.")
+        if provided_axis is None:
+            n_total = n_rows * n_cols
+            if n_inputs > n_total:
+                raise ValueError(
+                    f"ShapeSubplot {shape_subplot} can show max {n_total} features, "
+                    f"but {n_inputs} were given."
+                )
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
+            axes = np.array(axes).reshape(-1)
+        else:
+            fig = provided_fig or provided_axis.figure
+            axes = np.array([provided_axis])
 
-        # ----------------------------------------------------------------------
-        # 2. Create figure and axes
-        # ----------------------------------------------------------------------
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 4*n_rows))
-        axes = np.array(axes).reshape(-1)  # flatten in case of 2D array of axes
+        axes_count = len(axes)
 
         # ----------------------------------------------------------------------
         # 3. Plot each feature in its own subplot
         # ----------------------------------------------------------------------
         for i, feature in enumerate(data):
-            ax = axes[i]
+            ax = axes[i] if i < axes_count else axes[-1]
             features = feature["data"]
             fid = feature["id"]
 
@@ -89,12 +149,13 @@ class TrialDynamicFeatureVisualizer(Visualizer):
 
             ax.legend()
 
-        # Hide extra subplots (if ShapeSubplot bigger than inputs)
-        for j in range(n_inputs, n_total):
-            fig.delaxes(axes[j])
-
-        plt.tight_layout()
-        plt.show()      
+        if provided_axis is None:
+            n_total = n_rows * n_cols
+            for j in range(n_inputs, n_total):
+                fig.delaxes(axes[j])
+            plt.tight_layout()
+            if not defer_show:
+                plt.show()
 
 @register("visualizers", "time_dynamic_feature_visualizer")
 class TimeDynamicFeatureVisualizer(Visualizer):
@@ -113,18 +174,18 @@ class TimeDynamicFeatureVisualizer(Visualizer):
         
  
     
-    def visualize(self, data: list):
+    def visualize(self, data: list, payload=None):
         scheme = self.arguments.get("scheme","same_figure")
         func = self.visualize_scheme[scheme]
         # bind the function to this instance before calling
         bound = func.__get__(self, self.__class__)
-        bound(data)
+        bound(data, payload or {})
 
     # def visualize(self, data: list):
     #     self.visualize_scheme[self.arguments["scheme"]](data)
 
     @reg("separate_figure")
-    def visualize1(self, data: list):
+    def visualize1(self, data: list, payload=None):
         """
         Visualize the temporal dynamics of one or more features.
 
@@ -142,6 +203,7 @@ class TimeDynamicFeatureVisualizer(Visualizer):
         # 1. Parse arguments
         # ----------------------------------------------------------------------
         args = self.arguments
+        payload = payload or {}
         feature_name = args.get("FeatureName", "Feature")
         level = args.get("CI", None)
         m = args.get("movemeansize", 1)
@@ -153,26 +215,31 @@ class TimeDynamicFeatureVisualizer(Visualizer):
             shape_subplot = tuple(shape_subplot)
 
         n_rows, n_cols = shape_subplot
-        n_total = n_rows * n_cols
         n_inputs = len(data)
 
-        if n_inputs > n_total:
-            raise ValueError(
-                f"ShapeSubplot {shape_subplot} can show max {n_total} features, "
-                f"but {n_inputs} were given."
-            )
+        provided_axis = payload.get("axis")
+        provided_fig = payload.get("figure")
+        defer_show = payload.get("defer_show", False)
 
-        # ----------------------------------------------------------------------
-        # 2. Create figure and axes
-        # ----------------------------------------------------------------------
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
-        axes = np.array(axes).reshape(-1)
+        if provided_axis is None:
+            n_total = n_rows * n_cols
+            if n_inputs > n_total:
+                raise ValueError(
+                    f"ShapeSubplot {shape_subplot} can show max {n_total} features, "
+                    f"but {n_inputs} were given."
+                )
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
+            axes = np.array(axes).reshape(-1)
+        else:
+            fig = provided_fig or provided_axis.figure
+            axes = np.array([provided_axis])
+            n_total = len(axes)
 
         # ----------------------------------------------------------------------
         # 3. Plot each feature in its own subplot
         # ----------------------------------------------------------------------
         for i, feature in enumerate(data):
-            ax = axes[i]
+            ax = axes[i] if i < n_total else axes[-1]
             # features = feature["data"]  # shape: (n_sessions, n_channels, n_windows)
             features = feature["data"][:,:,:,0]
             fid = feature["id"]
@@ -189,8 +256,10 @@ class TimeDynamicFeatureVisualizer(Visualizer):
             ax.set_ylabel(feature_name)
 
             # If legends not given, use channel indices
-            if not legends:
-                legends = [f"Ch{ch+1}" for ch in range(n_channels)]
+            if legends:
+                legend_labels = legends
+            else:
+                legend_labels = [f"Ch{ch+1}" for ch in range(n_channels)]
 
             # Plot each channel’s grand average with CI
             for ch in range(n_channels):
@@ -198,26 +267,27 @@ class TimeDynamicFeatureVisualizer(Visualizer):
                     data=features[:, ch, :],
                     x=x_idx,
                     ax=ax,
-                    label=legends[ch] if ch < len(legends) else f"Ch{ch+1}",
+                    label=legend_labels[ch] if ch < len(legend_labels) else f"Ch{ch+1}",
                     m=m,
                     level=level,
                 )
 
             ax.legend()
 
-        # Hide any unused subplots
-        for j in range(n_inputs, n_total):
-            fig.delaxes(axes[j])
-
-        plt.tight_layout()
-        plt.show()
+        if provided_axis is None:
+            for j in range(n_inputs, n_total):
+                fig.delaxes(axes[j])
+            plt.tight_layout()
+            if not defer_show:
+                plt.show()
 
     @reg("same_figure")
-    def visualizer2(self,data:list):
+    def visualizer2(self,data:list, payload=None):
         # ----------------------------------------------------------------------
         # 1. Parse arguments
         # ----------------------------------------------------------------------
         args = self.arguments
+        payload = payload or {}
         feature_name = args.get("FeatureName", "Feature")
         level = args.get("CI", None)
         m = args.get("movemeansize", 1)
@@ -238,10 +308,18 @@ class TimeDynamicFeatureVisualizer(Visualizer):
         #         f"ShapeSubplot {shape_subplot} can show max {n_total} features, "
         #         f"but {n_inputs} were given."
         #     )
+        provided_axis = payload.get("axis")
+        provided_fig = payload.get("figure")
+        defer_show = payload.get("defer_show", False)
+
         # ----------------------------------------------------------------------
         # 1) Single figure/axes for all features
         # ----------------------------------------------------------------------
-        fig, ax = plt.subplots(figsize=(8, 5))
+        if provided_axis is None:
+            fig, ax = plt.subplots(figsize=(8, 5))
+        else:
+            ax = provided_axis
+            fig = provided_fig or ax.figure
 
         # Optional: overall title/labels (can be adjusted per your taste)
         ax.set_title(title)
@@ -285,5 +363,7 @@ class TimeDynamicFeatureVisualizer(Visualizer):
 
         # One legend for everything
         ax.legend()
-        fig.tight_layout()
-        plt.show()
+        if provided_axis is None:
+            fig.tight_layout()
+            if not defer_show:
+                plt.show()
