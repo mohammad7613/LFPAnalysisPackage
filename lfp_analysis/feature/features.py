@@ -1192,6 +1192,7 @@ class EventWindowedFeature(FeatureFunction):
                  feature_name: str,
                  feature_args: dict,
                  window_size: int,
+                 channels: list,
                  event_type: int = None,
                  overlap: float = 0.5,
                  paradigm: str = "per_epoch",
@@ -1202,6 +1203,7 @@ class EventWindowedFeature(FeatureFunction):
         assert 0 <= overlap < 1, "overlap must be in [0,1)"
 
         self.feature = REGISTRIES["features"][feature_name](**feature_args)
+        self.channels = channels
         self.event_type = event_type if isinstance(event_type, (list, tuple)) else [event_type]
         self.window_size = window_size
         self.overlap = overlap
@@ -1229,7 +1231,8 @@ class EventWindowedFeature(FeatureFunction):
         n_sessions, n_channels, _, n_samples = signal.shape
         step = int(self.window_size * (1 - self.overlap))
         n_windows = max(1, (n_samples - self.window_size) // step + 1)
-        out = np.zeros((n_sessions, n_channels, n_windows))
+        n_channels = len(self.channels)
+      
 
         def process_session_channel(s, ch):
             ep_mask = (np.isin(events[s], self.event_type) if self.event_type != None else np.ones_like(events[s]))
@@ -1242,10 +1245,12 @@ class EventWindowedFeature(FeatureFunction):
         results = Parallel(n_jobs=self.n_jobs)(
             delayed(process_session_channel)(s, ch)
             for s in range(n_sessions)
-            for ch in range(n_channels)
+            for ch in self.channels
         )
-
-        return np.array(results).reshape(n_sessions, n_channels, n_windows)
+        results = np.array(results)
+        np.save("/home/mohammad/Desktop/PiplineCodes/lfp_analysis_git/lfp_analysis/feature/debug_eventwindowedfeature_parallel.npy", results)
+        print("save debug_eventwindowedfeature_parallel.npy")
+        return results.reshape(n_sessions, n_channels, n_windows)
 
     # --------------------------------------------------------------
     # Parallel helper for average-epochs paradigm
@@ -1267,7 +1272,7 @@ class EventWindowedFeature(FeatureFunction):
         results = Parallel(n_jobs=self.n_jobs)(
             delayed(process_session_channel)(s, ch)
             for s in range(n_sessions)
-            for ch in range(n_channels)
+            for ch in self.channels
         )
 
         return np.array(results).reshape(n_sessions, n_channels, n_windows)
