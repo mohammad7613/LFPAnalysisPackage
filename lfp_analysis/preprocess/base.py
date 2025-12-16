@@ -23,11 +23,11 @@ class Preprocessor:
     n_samples)
     - Output: same shape
     """
-    def process(self, data: np.ndarray, **kwargs) -> np.ndarray:
+    def process(self, signal: np.ndarray, **kwargs) -> np.ndarray:
         """Apply preprocessing to the entire dataset.
         Parameters
         ----------
-        data : np.ndarray
+        signal : np.ndarray
         LFP data with shape (sessions, channels, epochs, samples)
         Returns
         -------

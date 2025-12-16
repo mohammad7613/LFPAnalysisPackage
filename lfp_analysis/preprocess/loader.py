@@ -60,3 +60,5 @@ class MatLoader(BaseLoader):
             event_matrix[i] = trial_types[0,:n_epochs]     # select first 100 trials
 
         return event_matrix
+
+
