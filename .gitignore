@@ -17,3 +17,7 @@ env/
 *.pdf
 
 *.ipynb
+
+Tasks.md
+
+*.npy
