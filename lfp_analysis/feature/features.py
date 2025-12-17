@@ -769,8 +769,48 @@ class Complexity(FeatureFunction):
 class averageout(FeatureFunction):
     def __init__(self, dim: int):
         self.dim = dim
-    def compute(self, signal, **kwargs) -> np.ndarray:
-        return np.mean(signal, axis=self.dim)
+    def compute(self, signal: np.ndarray, **kwargs) -> np.ndarray:
+        return np.mean(signal, axis=self.dim)  # Compute the average along the specified dimension
+
+
+@register("features", "axis_mapped_feature")
+class AxisMappedFeature(FeatureFunction):
+    """Apply a registered feature independently along a chosen axis."""
+
+    def __init__(self, base_feature: str, base_args: dict, axis: int = -1):
+        if base_feature not in REGISTRIES["features"]:
+            raise ValueError(f"Unknown base feature '{base_feature}'")
+        self.axis = axis
+        self.base_feature_name = base_feature
+        self.base_args = base_args
+        self.base = REGISTRIES["features"][base_feature](**base_args)
+
+    def compute(self, signal: np.ndarray, **kwargs) -> np.ndarray:
+        if signal is None:
+            raise ValueError("AxisMappedFeature requires a 'signal' input array")
+        if not isinstance(signal, np.ndarray):
+            signal = np.asarray(signal)
+
+        axis = self.axis if self.axis >= 0 else signal.ndim + self.axis
+        if axis < 0 or axis >= signal.ndim:
+            raise ValueError(f"Axis index {self.axis} invalid for shape {signal.shape}")
+
+        moved = np.moveaxis(signal, axis, -1)
+        n_slices = moved.shape[-1]
+        outputs = []
+        for idx in range(n_slices):
+            slice_data = moved[..., idx]
+            outputs.append(self.base.compute(slice_data, **kwargs))
+
+        try:
+            stacked = np.stack(outputs, axis=-1)
+        except ValueError as exc:
+            raise ValueError(
+                f"Base feature '{self.base_feature_name}' returned tensors with incompatible shapes"
+            ) from exc
+        return stacked
+
+
 
 
 
@@ -1569,10 +1609,9 @@ class EventERP(FeatureFunction):
             )
         n_channels = len(self.channels)
         out = np.full((n_sessions, n_channels, n_samples, 2), np.nan, dtype=float)
-
         # Compute mean & std across selected epochs per session/channel
         for s in range(n_sessions):
-            for ch in self.channels:
+            for index,ch in enumerate(self.channels):
                 ep_mask = np.isin(events[s], self.event_type)  # (n_epochs,)
                 if not np.any(ep_mask):
                     # leave NaNs if no matching epochs
@@ -1584,8 +1623,8 @@ class EventERP(FeatureFunction):
                 mean_erp = np.mean(selected, axis=0)                  # (n_channels, n_samples)
                 std_erp  = np.std(selected, axis=0, ddof=0)           # (n_channels, n_samples)
 
-                out[s, ch, :, 0] = mean_erp
-                out[s, ch, :, 1] = std_erp
+                out[s, index, :, 0] = mean_erp
+                out[s, index, :, 1] = std_erp
 
         return out
 

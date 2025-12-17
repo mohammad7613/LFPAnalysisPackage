@@ -1,0 +1,45 @@
+# Example: apply an existing feature along the final axis of a tensor
+# Update dataset path/format to match your local data. The dataset should yield
+# an array with shape (sessions, channels, epochs, samples, runs).
+
+
+datasets:
+  - id: "complexity_rest"
+    format: "mat"
+    path: "/home/mohammad/Desktop/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_Baseline_dataV4.mat"
+
+preprocessors:
+  - id: "selectsession"
+    name: "selectsession"
+    args:
+      session_indexs: [9,10]
+  - id: "zscore_norm"
+    name: "zscore"
+    args: {dim: -2}
+
+features:
+  - id: "complexity_tests"
+    name: "axis_mapped_feature"
+    dataset: "complexity_rest"
+    preprocessors: ["selectsession","zscore_norm"]
+    args:
+      base_feature: "TimeTrial"
+      base_args:
+        feature_name: "Complexity_base"
+        feature_args:
+          complexity_type: "LZC"
+          arguments:
+            num_levels: 2
+        channels: [0,1,2,3]
+        window_size: 200
+        overlap: 0.5
+      axis: -1   # iterate over the extra "runs" dimension
+
+visualizers: []
+
+storages:
+  - name: "mat"
+    args: 
+      complexity_tests:
+          path: "/home/mohammad/Desktop/PiplineCodes/Complexity/TimeTrialComplexityRes.mat"
+          variable_name: "TimeTrialComplexityRests" # for mat storage, this item is manditory 
