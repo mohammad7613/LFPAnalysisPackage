@@ -9,17 +9,27 @@ from lfp_analysis.registry import register
 @register("preprocessors","selectsession")
 class sessionselect(Preprocessor):
     """
-    selection sessions
-    independently.
-    Input: numpy array with shape (Number of sessions,...)
-    Output: numpy array with shape(Numbr of selected sessions,....)
+    Select a subset of sessions (first axis) for both signal and optional events.
+
+    Input signal shape: (n_sessions, ...)
+    Optional `events` kwarg: (n_sessions, n_epochs)
     """
+
     def __init__(self, session_indexs):
         self.session_indexes = session_indexs
-    def process(self, signal: np.ndarray, **kwargs: Any) -> np.ndarray:
-        """
-        """
-        return signal[self.session_indexes]
+
+    def process(self, signal: np.ndarray, **kwargs: Any) -> Any:
+        selected_signal = signal[self.session_indexes]
+
+        events = kwargs.get("events")
+        if events is not None:
+            selected_events = events[self.session_indexes]
+            return {
+                "signal": selected_signal,
+                "events": selected_events,
+            }
+
+        return selected_signal
 
 @register("preprocessors","zscore")
 class zscore(Preprocessor):

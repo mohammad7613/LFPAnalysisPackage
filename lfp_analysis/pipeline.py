@@ -65,27 +65,30 @@ class LfpPipeline:
             spec = fdict["spec"]
             dataset_id = spec["dataset"]
 
-            # get raw data from dataset
-            data = self.datasets[dataset_id].copy()
-            
-            if isinstance(data, dict):
-                # optional preprocessors
-                signal = data["signal"]
-                for pid in spec.get("preprocessors", []):
-                    preproc = self.preprocessors[pid]
-                    signal = preproc.process(signal)
-                data["signal"] = signal
-
-                #compute feature
-                fdict["result"] = fdict["instance"].compute(**data)
+            # get raw data from dataset and normalize into a mutable payload
+            dataset_obj = self.datasets[dataset_id]
+            if isinstance(dataset_obj, dict):
+                payload = dataset_obj.copy()
             else:
-                # optional preprocessors
-                for pid in spec.get("preprocessors", []):
-                    preproc = self.preprocessors[pid]
-                    data = preproc.process(data)
-                
-                #compute feature
-                fdict["result"] = fdict["instance"].compute(signal=data)
+                payload_signal = dataset_obj.copy() if hasattr(dataset_obj, "copy") else dataset_obj
+                payload = {"signal": payload_signal}
+
+            # optional preprocessors that can mutate signal and/or auxiliary data
+            for pid in spec.get("preprocessors", []):
+                preproc = self.preprocessors[pid]
+                # extra_inputs = {k: v for k, v in payload.items() if k != "signal"}
+                # result = preproc.process(payload["signal"], **extra_inputs)
+                result = preproc.process(**payload)
+
+                if isinstance(result, dict):
+                    if "signal" not in result:
+                        result["signal"] = payload["signal"]
+                    payload.update(result)
+                elif result is not None:
+                    payload["signal"] = result
+
+            # compute feature with the (possibly) expanded payload
+            fdict["result"] = fdict["instance"].compute(**payload)
                 
             self.results[fid] = fdict["result"]
 
