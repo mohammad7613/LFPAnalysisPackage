@@ -310,14 +310,28 @@ class BandPowerFeature(FeatureFunction):
     sfreq : float
     sampling frequency
     """
-    def __init__(self, band: Tuple[float, float], sfreq: float):
+    def __init__(self, band: Tuple[float, float], sfreq: float, power_type: str="pwelch"):
         self.band = band
         self.sfreq = sfreq
-    def _bandpower_1d(self, signal: np.ndarray) -> float:
+        self.power_type = power_type
+        self.power_types = {"fft": self._bandpower_1d_fft, "pwelch": self._bandpower_1d_welch}
+        # self.argument = arguments
+        assert self.power_type  in self.power_types.keys(), f"Power type {power_type} not recognized. Available types: {list(self.power_types.keys())}"
+        # self.power_types_args = {"SampEn": ["m", "r", "tau"], "FuzzyEn": ["m", "r", "n", "tau"], "LZC": ["num_levels"]}
+        # assert set(self.argument.keys()) == set(self.power_types_args[power_type]), f"Arguments for {power_type} must be {self.power_types_args[power_type]}" 
+    def _bandpower_1d_welch(self, signal: np.ndarray) -> float:
         freqs, psd = welch(signal, fs=self.sfreq, nperseg=min(256, len(signal)))
         mask = (freqs >= self.band[0]) & (freqs <= self.band[1])
          # Integrate PSD over band
         return float(np.trapezoid(psd[mask], freqs[mask]))
+    def _bandpower_1d_fft(self, signal: np.ndarray) -> float:
+        n = len(signal)
+        fft_vals = np.fft.rfft(signal)
+        fft_freqs = np.fft.rfftfreq(n, 1.0 / self.sfreq)
+        psd = (1.0 / (self.sfreq * n)) * np.abs(fft_vals) ** 2
+        psd[1:-1] *= 2  # account for positive & negative frequencies
+        mask = (fft_freqs >= self.band[0]) & (fft_freqs <= self.band[1])
+        return float(np.trapezoid(psd[mask], fft_freqs[mask]))
     def compute(self, signal, **kwargs) -> np.ndarray:
         """Compute bandpower.
         If `signal` has shape (n_samples,) -> return float.
@@ -325,7 +339,7 @@ class BandPowerFeature(FeatureFunction):
         return (n_sessions, n_epochs) averaged across channels.
         """
         assert signal.ndim == 1
-        return self._bandpower_1d(signal)
+        return self.power_types[self.power_type](signal)
 
 
 
@@ -1159,6 +1173,8 @@ class EventWindowedFeature(FeatureFunction):
         events : (n_sessions, n_epochs)
         returns (n_sessions, n_channels, n_windows)
         """
+        assert signal.shape[0] == events.shape[0], \
+            "Number of sessions in `signal` and `events` must match"
         if signal is None:
             raise ValueError("EventWindowedFeature requires `signal`")
         if events is None:
@@ -1262,6 +1278,8 @@ class EventWindowedFeature(FeatureFunction):
             raise ValueError("EventWindowedFeature requires `signal`")
         if events is None:
             raise ValueError("EventWindowedFeature requires `events` matrix")
+        assert signal.shape[0] == events.shape[0], \
+            "Number of sessions in `signal` and `events` must match"
         return self._compute_strategy(signal, events)
 
     # --------------------------------------------------------------
