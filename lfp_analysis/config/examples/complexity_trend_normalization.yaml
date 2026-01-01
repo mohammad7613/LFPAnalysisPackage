@@ -1,0 +1,102 @@
+datasets:
+  - id: "novelty"
+    format: "mat"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
+    # path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_2_epoched_preprocessed_novelty0-raw_dataV4.mat"
+
+  - id: "complexity_rest"
+    format: "mat_cell"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/Complexity/complexitySampeEnStandardizeChBaselineSessions.mat"
+
+
+preprocessors:
+  - id: "selectsession"
+    name: "selectsession"
+    args:
+      session_indexs: [9,10,11,12,13,14,15,16,17,18,19,20]
+  - id: "zscore_norm"
+    name: "zscore"
+    args: {dim: -1}
+  - id: "selecttime"
+    name: "selecttime"
+    args:
+      start_index: 540 
+      end_index : 3340
+
+# features:
+#   - id: "multi_feature_example"
+#     name: "FeaturePipeline"
+#     dataset: "novelty"
+#     preprocessors: ["selectsession","selecttime","zscore_norm"]
+#     args:
+#       return_mode: "last"
+#       steps:
+#           - id: "complexity_temmporal_target"
+#             name: "TrialTrend"
+#             args:
+#               feature_name: "Complexity_base"
+#               window_index: [1340,1740]
+#               feature_args:
+#                 complexity_type: "LZC"
+#                 arguments:
+#                   num_levels: 2
+#               channels: [2]
+#           - id: "normalization"
+#             name: "normalize"
+#             args:
+#                axis: -1
+
+features:
+  - id: "multi_feature_example"
+    name: "FeaturePipeline"
+    dataset: "novelty"
+    preprocessors: ["selectsession","selecttime","zscore_norm"]
+    args:
+      return_mode: "last"
+      steps:
+          - id: "complexity_temmporal_target"
+            name: "TrialTrend"
+            args:
+              feature_name: "Complexity_base"
+              window_index: [1340,1740]
+              feature_args:
+                complexity_type: "SampEn"
+                arguments: 
+                        m: 2
+                        r: 0.15
+                        tau: 1
+              channels: [2]
+          - id: "normalization"
+            name: "normalize"
+            args:
+               axis: -1
+# features:
+#   - id: "complexity_novelty"
+#     name: "Complexity"
+#     dataset: "novelty"
+#     preprocessors: ["selectsession","zscore_norm"]
+#     args:
+#       complexity_type: "SampEn"
+#       arguments: 
+#         m: 2
+#         r: 0.15
+#         tau: 1
+#       channels: [0,1,2,3]
+#       time_window: [1340,1740]
+#   - id: "averageout_dim"
+#     name: "averageout"
+#     dataset: "complexity_rest"
+#     preprocessors: []
+#     args:
+#       dim: 3
+
+visualizers:
+  - name: "trial_dynamic_feature_visualizer"
+    args: 
+      FeatureName: "Complexity"
+      movemeansize: 10
+      edge_mode: "same" # Another mode is "trim"
+      title: "Complexity Trend Normalized"
+      legends: ["Striatum"]
+    inputs:
+      - feature: "multi_feature_example"

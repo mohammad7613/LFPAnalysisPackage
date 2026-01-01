@@ -1,0 +1,39 @@
+datasets:
+  - id: "novelty"
+    format: "mat_events"
+    path: "/path/to/data.mat"
+
+preprocessors:
+  - id: "zscore_norm"
+    name: "zscore"
+    args: {dim: -1}
+
+features:
+  - id: "multi_feature_example"
+    name: "FeaturePipeline"
+    dataset: "novelty"
+    preprocessors: ["zscore_norm"]
+    args:
+      mode: "parallel"
+      return_mode: "dict"
+      steps:
+        - id: "complexity_block"
+          name: "TrialTrend"
+          args:
+            feature_name: "Complexity_base"
+            window_index: [200, 600]
+            feature_args:
+              complexity_type: "LZC"
+              arguments:
+                num_levels: 2
+            channels: [2]
+        - id: "bandpower_block"
+          name: "TimeTrial"
+          args:
+            feature_name: "band_power_base"
+            feature_args:
+              band: [30, 80]
+              sfreq: 2000
+            window_size: 400
+            channels: [2]
+            overlap: 0.5

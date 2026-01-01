@@ -1,12 +1,11 @@
 # features/power_band.py
 # lfp_analysis/business_logic/spectral.py
 """Spectral feature implementations (example: band power)."""
-from typing import Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 from .base import FeatureFunction
 from scipy.signal import welch
 from npeet import entropy_estimators as ee
-from typing import List, Tuple
 from lfp_analysis.registry import register
 from scipy.signal import butter, filtfilt, hilbert,firwin, correlate
 from lfp_analysis.registry.base import REGISTRIES
@@ -324,14 +323,60 @@ class BandPowerFeature(FeatureFunction):
         mask = (freqs >= self.band[0]) & (freqs <= self.band[1])
          # Integrate PSD over band
         return float(np.trapezoid(psd[mask], freqs[mask]))
-    def _bandpower_1d_fft(self, signal: np.ndarray) -> float:
-        n = len(signal)
-        fft_vals = np.fft.rfft(signal)
-        fft_freqs = np.fft.rfftfreq(n, 1.0 / self.sfreq)
-        psd = (1.0 / (self.sfreq * n)) * np.abs(fft_vals) ** 2
-        psd[1:-1] *= 2  # account for positive & negative frequencies
-        mask = (fft_freqs >= self.band[0]) & (fft_freqs <= self.band[1])
-        return float(np.trapezoid(psd[mask], fft_freqs[mask]))
+    # def _bandpower_1d_fft(self, signal: np.ndarray) -> float:
+    #     n = len(signal)   
+    #     fft_vals = np.fft.fft(signal)
+    #     fft_freqs = np.fft.fftfreq(n, 1.0 / self.sfreq)
+    #     psd =  np.abs(fft_vals/n) ** 2
+    #     psd[1:-1] *= 2  # account for positive & negative frequencies
+    #     mask = (fft_freqs >= self.band[0]) & (fft_freqs <= self.band[1])
+    #     return float(np.trapezoid(psd[mask], fft_freqs[mask]))
+    def _bandpower_1d_fft(self,signal: np.ndarray) -> float:
+        """
+        Compute power within [f_low, f_high] for a single 1-D signal.
+
+        Parameters
+        ----------
+        x : array-like
+            1-D samples.
+        band : tuple(float, float)
+            Frequency band limits in Hz. Inclusive of f_low, inclusive of f_high.
+        fs : float
+            Sampling frequency in Hz.
+
+        Returns
+        -------
+        float
+            Power in the specified band (same units as signal**2).
+        """
+        signal = np.asarray(signal, dtype=float).ravel()
+        n = signal.size
+        if n == 0:
+            return 0.0
+
+        # FFT and two-sided power spectrum (periodogram with rectangular window)
+        fft_vals = np.fft.fft(signal)
+        p2 = (np.abs(fft_vals) / n) ** 2  # two-sided power
+
+        # Build single-sided spectrum
+        if n % 2 == 0:  # even length
+            p1 = p2[: n // 2 + 1].copy()
+            if p1.size > 2:
+                p1[1:-1] *= 2.0
+            freqs = np.arange(0, n // 2 + 1) * (self.sfreq / n)
+        else:  # odd length
+            p1 = p2[: (n + 1) // 2].copy()
+            if p1.size > 1:
+                p1[1:] *= 2.0
+            freqs = np.arange(0, (n + 1) // 2) * (self.sfreq / n)
+
+        df = self.sfreq / n
+        mask = (freqs >= self.band[0]) & (freqs <= self.band[1])
+        if not np.any(mask):
+            return 0.0
+
+        return float(np.sum(p1[mask]) * df)
+
     def compute(self, signal, **kwargs) -> np.ndarray:
         """Compute bandpower.
         If `signal` has shape (n_samples,) -> return float.
@@ -343,69 +388,69 @@ class BandPowerFeature(FeatureFunction):
 
 
 
-@register("features","TE")
-class TE(FeatureFunction):
-    def __init__(self,d_x: int, d_y: int, w_x: int, w_y: int, channel_pairs: List[Tuple], time_window: Tuple):
-        self.d_x = d_x
-        self.d_y = d_y
-        self.w_x = w_x
-        self.w_y = w_y
-        self.channel_pairs = channel_pairs
-        self.time_window = time_window
+# @register("features","TE")
+# class TE(FeatureFunction):
+#     def __init__(self,d_x: int, d_y: int, w_x: int, w_y: int, channel_pairs: List[Tuple], time_window: Tuple):
+#         self.d_x = d_x
+#         self.d_y = d_y
+#         self.w_x = w_x
+#         self.w_y = w_y
+#         self.channel_pairs = channel_pairs
+#         self.time_window = time_window
 
 
-    def compute(self, signal, **kwargs) -> np.ndarray:
-        TE = np.zeros((signal.shape[0],len(self.channel_pairs),signal.shape[2]))
-        for k,ch_pair in enumerate(self.channel_pairs):
-            ch1 = ch_pair[0]
-            ch2 = ch_pair[1]
-            for session in np.arange(signal.shape[0]):
-                for trial in np.arange(signal.shape[2]):
-                    X = signal[session,ch1,trial,self.time_window[0]:self.time_window[1]]
-                    Y = signal[session,ch2,trial,self.time_window[0]:self.time_window[1]]
-                    TE[session,k,trial] = self.TransferEntropy(X=X,Y=Y,d_x=self.d_x,d_y=self.d_y,w_x=self.w_x,w_y=self.w_y)
-        return TE
+#     def compute(self, signal, **kwargs) -> np.ndarray:
+#         TE = np.zeros((signal.shape[0],len(self.channel_pairs),signal.shape[2]))
+#         for k,ch_pair in enumerate(self.channel_pairs):
+#             ch1 = ch_pair[0]
+#             ch2 = ch_pair[1]
+#             for session in np.arange(signal.shape[0]):
+#                 for trial in np.arange(signal.shape[2]):
+#                     X = signal[session,ch1,trial,self.time_window[0]:self.time_window[1]]
+#                     Y = signal[session,ch2,trial,self.time_window[0]:self.time_window[1]]
+#                     TE[session,k,trial] = self.TransferEntropy(X=X,Y=Y,d_x=self.d_x,d_y=self.d_y,w_x=self.w_x,w_y=self.w_y)
+#         return TE
         
 
-    def generate_lagged_vectors(self, signal: np.ndarray, lag: int) -> np.ndarray :
-        """Generate lagged vectors from a signal."""
-        n = len(signal)
-        lagged_vectors = np.array([signal[i: n - lag + i + 1] for i in range(lag)]).T
-        return lagged_vectors
+#     def generate_lagged_vectors(self, signal: np.ndarray, lag: int) -> np.ndarray :
+#         """Generate lagged vectors from a signal."""
+#         n = len(signal)
+#         lagged_vectors = np.array([signal[i: n - lag + i + 1] for i in range(lag)]).T
+#         return lagged_vectors
 
 
-    def TransferEntropy(self, X: np.ndarray, Y: np.ndarray, d_x: int, d_y: int, w_x: int, w_y: int) -> float:
-        """
-        Calculate the Transfer Entropy from X to Y.
+#     def TransferEntropy(self, X: np.ndarray, Y: np.ndarray, d_x: int, d_y: int, w_x: int, w_y: int) -> float:
+#         """
+#         Calculate the Transfer Entropy from X to Y.
         
-        Parameters:
-        - Y (np.ndarray): The target signal.
-        - X (np.ndarray): The source signal.
-        - d_y (int): The lag for the target signal.
-        - d_x (int): The lag for the source signal.
-        - w_y (int): The window size for the target signal.
-        - w_x (int): The window size for the source signal.
+#         Parameters:
+#         - Y (np.ndarray): The target signal.
+#         - X (np.ndarray): The source signal.
+#         - d_y (int): The lag for the target signal.
+#         - d_x (int): The lag for the source signal.
+#         - w_y (int): The window size for the target signal.
+#         - w_x (int): The window size for the source signal.
 
-        Returns:
-        - float: The calculated Transfer Entropy value.
-        """
+#         Returns:
+#         - float: The calculated Transfer Entropy value.
+#         """
 
-        X_lagged = self.generate_lagged_vectors(X, w_x)
-        Y_lagged = self.generate_lagged_vectors(Y, w_y)
-        X_lagged = X_lagged[:-d_x-1]
-        Y_lagged = Y_lagged[:-d_y-1]
+#         X_lagged = self.generate_lagged_vectors(X, w_x)
+#         Y_lagged = self.generate_lagged_vectors(Y, w_y)
+#         X_lagged = X_lagged[:-d_x-1]
+#         Y_lagged = Y_lagged[:-d_y-1]
 
-        # Remove the initial part where lagged vectors are not defined
-        max_index = max(w_x + d_x , w_y + d_y)
-        if w_x + d_x == max_index:
-            Y_lagged = Y_lagged[max_index- w_y - d_y:]
-        else:         
-            X_lagged = X_lagged[max_index- w_x - d_x:]
+#         # Remove the initial part where lagged vectors are not defined
+#         max_index = max(w_x + d_x , w_y + d_y)
+#         if w_x + d_x == max_index:
+#             Y_lagged = Y_lagged[max_index- w_y - d_y:]
+#         else:         
+#             X_lagged = X_lagged[max_index- w_x - d_x:]
         
 
-        Y_t = Y[max_index:]
+#         Y_t = Y[max_index:]
         
-        return ee.cmi(Y_t, X_lagged, Y_lagged)
+#         return ee.cmi(Y_t, X_lagged, Y_lagged)
 
 
 
@@ -430,6 +475,49 @@ class BandPowerFeature(FeatureFunction):
         mask = (freqs >= self.band[0]) & (freqs <= self.band[1])
          # Integrate PSD over band
         return float(np.trapezoid(psd[mask], freqs[mask]))
+    def _bandpower_1d_fft(self,signal: np.ndarray) -> float:
+        """
+        Compute power within [f_low, f_high] for a single 1-D signal.
+
+        Parameters
+        ----------
+        x : array-like
+            1-D samples.
+        band : tuple(float, float)
+            Frequency band limits in Hz. Inclusive of f_low, inclusive of f_high.
+        fs : float
+            Sampling frequency in Hz.
+
+        Returns
+        -------
+        float
+            Power in the specified band (same units as signal**2).
+        """
+        signal = np.asarray(signal, dtype=float).ravel()
+        n = signal.size
+        if n == 0:
+            return 0.0
+
+        # FFT and two-sided power spectrum (periodogram with rectangular window)
+        fft_vals = np.fft.fft(signal)
+        p2 = (np.abs(fft_vals) / n) ** 2  # two-sided power
+
+        # Build single-sided spectrum
+        if n % 2 == 0:  # even length
+            p1 = p2[: n // 2 + 1].copy()
+            if p1.size > 2:
+                p1[1:-1] *= 2.0
+            freqs = np.arange(0, n // 2 + 1) * (self.sfreq / n)
+        else:  # odd length
+            p1 = p2[: (n + 1) // 2].copy()
+            if p1.size > 1:
+                p1[1:] *= 2.0
+            freqs = np.arange(0, (n + 1) // 2) * (self.sfreq / n)
+
+        df = self.sfreq / n
+        mask = (freqs >= self.band[0]) & (freqs <= self.band[1])
+        if not np.any(mask):
+            return 0.0
     def compute(self, data, **kwargs) -> np.ndarray:
         """Compute bandpower.
         If `signal` has shape (n_samples,) -> return float.
@@ -438,7 +526,7 @@ class BandPowerFeature(FeatureFunction):
         """
         signal = data
         if signal.ndim == 1:
-            return self._bandpower_1d(signal)
+            return self._bandpower_1d_fft(signal)
     # assume full dataset
         sessions, channels, epochs, samples = signal.shape
         out = np.zeros((sessions, epochs), dtype=float)
@@ -446,7 +534,7 @@ class BandPowerFeature(FeatureFunction):
             for e in range(epochs):
                 # average channels for a single trial
                 avg_signal = signal[s, :, e, :].mean(axis=0)
-                out[s, e] = self._bandpower_1d(avg_signal)
+                out[s, e] = self._bandpower_1d_fft(avg_signal)
         return out
 
 
@@ -521,262 +609,347 @@ class MUAFeature(FeatureFunction):
 
 
 
-@register("features","DPLI")
-class DPLI(FeatureFunction):
-    """
-    Multi-unit activity (MUA) feature.
-    Parameters
-    ----------
-    sfreq : float
-        Sampling frequency.
-    low_hz : float
-        Low cut-off frequency for bandpass filter.
-    high_hz : float
-        High cut-off frequency for bandpass filter.
-    """
-    def __init__(self, sfreq: float, x_lowcut: float, x_highcut: float, y_lowcut: float, y_highcut:float, channel_pairs: List[Tuple],time_window: Tuple=(0,50)):
-        self.fs = sfreq
-        self.lowcut_x = x_lowcut
-        self.highcut_x = x_highcut
-        self.lowcut_y = y_lowcut
-        self.highcut_y = y_highcut
-        self.channel_pairs = channel_pairs
-        self.time_window = time_window
+# @register("features","DPLI")
+# class DPLI(FeatureFunction):
+#     """
+#     Multi-unit activity (MUA) feature.
+#     Parameters
+#     ----------
+#     sfreq : float
+#         Sampling frequency.
+#     low_hz : float
+#         Low cut-off frequency for bandpass filter.
+#     high_hz : float
+#         High cut-off frequency for bandpass filter.
+#     """
+#     def __init__(self, sfreq: float, x_lowcut: float, x_highcut: float, y_lowcut: float, y_highcut:float, channel_pairs: List[Tuple],time_window: Tuple=(0,50)):
+#         self.fs = sfreq
+#         self.lowcut_x = x_lowcut
+#         self.highcut_x = x_highcut
+#         self.lowcut_y = y_lowcut
+#         self.highcut_y = y_highcut
+#         self.channel_pairs = channel_pairs
+#         self.time_window = time_window
 
-    def compute(self, signal, **kwargs):
-        DPLI = np.zeros((signal.shape[0],len(self.channel_pairs),signal.shape[2]))
-        print(signal.shape[0])
-        for k,ch_pair in enumerate(self.channel_pairs):
-            ch1 = ch_pair[0]
-            ch2 = ch_pair[1]
-            for session in np.arange(signal.shape[0]):
-                for trial in np.arange(signal.shape[2]):
-                    X = signal[session,ch1,trial,self.time_window[0]:self.time_window[1]]
-                    Y = signal[session,ch2,trial,self.time_window[0]:self.time_window[1]]
-                    DPLI[session,k,trial] = self.compute_dpli_band(signal_x=X,signal_y=Y,fs=self.fs,lowcut_x = self.lowcut_x,highcut_x = self.highcut_x,lowcut_y=self.lowcut_y,highcut_y=self.highcut_y)
-        return DPLI
-    def butter_bandpass(self,lowcut, highcut, fs, order=4):
-        nyq = 0.5 * fs
-        b, a = butter(order, [lowcut/nyq, highcut/nyq], btype='band')
-        return b, a
+#     def compute(self, signal, **kwargs):
+#         DPLI = np.zeros((signal.shape[0],len(self.channel_pairs),signal.shape[2]))
+#         print(signal.shape[0])
+#         for k,ch_pair in enumerate(self.channel_pairs):
+#             ch1 = ch_pair[0]
+#             ch2 = ch_pair[1]
+#             for session in np.arange(signal.shape[0]):
+#                 for trial in np.arange(signal.shape[2]):
+#                     X = signal[session,ch1,trial,self.time_window[0]:self.time_window[1]]
+#                     Y = signal[session,ch2,trial,self.time_window[0]:self.time_window[1]]
+#                     DPLI[session,k,trial] = self.compute_dpli_band(signal_x=X,signal_y=Y,fs=self.fs,lowcut_x = self.lowcut_x,highcut_x = self.highcut_x,lowcut_y=self.lowcut_y,highcut_y=self.highcut_y)
+#         return DPLI
+#     def butter_bandpass(self,lowcut, highcut, fs, order=4):
+#         nyq = 0.5 * fs
+#         b, a = butter(order, [lowcut/nyq, highcut/nyq], btype='band')
+#         return b, a
 
-    def bandpass_filter(self,data, lowcut, highcut, fs, order=4):
-        b, a = self.butter_bandpass(lowcut, highcut, fs, order=order)
-        return filtfilt(b, a, data)
+#     def bandpass_filter(self,data, lowcut, highcut, fs, order=4):
+#         b, a = self.butter_bandpass(lowcut, highcut, fs, order=order)
+#         return filtfilt(b, a, data)
 
-    def compute_dpli_band(self,signal_x, signal_y, fs, lowcut_x, highcut_x,lowcut_y, highcut_y):
-        # Step 1: filter each signal into precise band
-        x_f = self.bandpass_filter(signal_x, lowcut_x, highcut_x, fs)
-        y_f = self.bandpass_filter(signal_y, lowcut_y, highcut_y, fs)
+#     def compute_dpli_band(self,signal_x, signal_y, fs, lowcut_x, highcut_x,lowcut_y, highcut_y):
+#         # Step 1: filter each signal into precise band
+#         x_f = self.bandpass_filter(signal_x, lowcut_x, highcut_x, fs)
+#         y_f = self.bandpass_filter(signal_y, lowcut_y, highcut_y, fs)
 
-        # Step 2: compute phases via Hilbert
-        ph_x = np.angle(hilbert(x_f))
-        ph_y = np.angle(hilbert(y_f))
+#         # Step 2: compute phases via Hilbert
+#         ph_x = np.angle(hilbert(x_f))
+#         ph_y = np.angle(hilbert(y_f))
 
-        # Step 3: wrap phase differences
-        delta = np.angle(np.exp(1j * (ph_x - ph_y)))
+#         # Step 3: wrap phase differences
+#         delta = np.angle(np.exp(1j * (ph_x - ph_y)))
 
-        # Step 4: compute dPLI
-        return np.mean(delta > 0)
+#         # Step 4: compute dPLI
+#         return np.mean(delta > 0)
 
 
-@register("features","Complexity")
-class Complexity(FeatureFunction):
-    def __init__(self,complexity_type: str, arguments: dict, channels : List[int],time_window: Tuple=(0,50)):
-        self.complexity_type = complexity_type
-        self.complexity_types = {"SampEn": self.SampEn, "FuzzyEn": self.FuzEn, "LZC": self.LZC}
-        self.channels = channels
-        self.argument = arguments
-        self.time_window = time_window
-        assert complexity_type in self.complexity_types.keys(), f"Complexity type {complexity_type} not recognized. Available types: {list(self.complexity_types.keys())}"
-        self.complexity_types_args = {"SampEn": ["m", "r", "tau"], "FuzzyEn": ["m", "r", "n", "tau"], "LZC": ["num_levels"]}
-        assert set(self.argument.keys()) == set(self.complexity_types_args[complexity_type]), f"Arguments for {complexity_type} must be {self.complexity_types_args[complexity_type]}"
-   
+def _normalize_window_index(window_index: Sequence[int]) -> Tuple[int, int]:
+    """Validate and normalize a [start, end] index tuple for sample slicing."""
+    if window_index is None:
+        raise ValueError("TrialTrend features require `window_index` with [start, end].")
+    if len(window_index) != 2:
+        raise ValueError("`window_index` must contain exactly two entries: [start, end].")
+    start, end = int(window_index[0]), int(window_index[1])
+    if start < 0:
+        raise ValueError("`window_index` start must be non-negative.")
+    if end <= start:
+        raise ValueError("`window_index` end must be greater than start.")
+    return start, end
 
-    def compute(self, signal, **kwargs):
-        Complexity = np.zeros((signal.shape[0],len(self.channels),signal.shape[2]))
-        print(signal.shape[0])
-        for k,ch in enumerate(self.channels):
-            for session in np.arange(signal.shape[0]):
-                for trial in np.arange(signal.shape[2]):
-                        X = signal[session,k,trial,self.time_window[0]:self.time_window[1]]
-                        Complexity[session,k,trial] = self.complexity_types[self.complexity_type](x=X,argument=self.argument)
-        return Complexity 
-    def SampEn(self,x,argument):
-        """
-        Sample Entropy (SampEn) of a univariate signal x.
 
-        Parameters
-        ----------
-        x : 1D array
-            Input signal
-        m : int
-            Embedding dimension
-        r : float
-            Threshold (commonly 0.15 * std(x))
-        tau : int, optional
-            Time lag (default = 1)
+def _ensure_numeric_array(value: np.ndarray) -> np.ndarray:
+    """Convert feature outputs to ndarray and coerce object dtypes to float."""
+    arr = np.asarray(value)
+    if arr.dtype == np.dtype("O"):
+        arr = arr.astype(float)
+    return arr
 
-        Returns
-        -------
-        Out_SampEn : float
-            The Sample Entropy of x
-        P : list
-            [total template matches of length m, total forward matches of length m+1]
-        """
-        m = argument["m"]
-        tau = argument["tau"]
-        r = argument["r"]
 
-        if tau > 1:
-            x = x[::tau]  # downsample
+def _resolve_axes(axis: Optional[Union[int, Sequence[int]]], ndim: int) -> Tuple[int, ...]:
+    if axis is None:
+        return tuple(range(ndim))
+    if isinstance(axis, (list, tuple, np.ndarray)):
+        axes = tuple(int(a) for a in axis)
+    else:
+        axes = (int(axis),)
+    normalized = []
+    for ax in axes:
+        adj = ax if ax >= 0 else ndim + ax
+        if adj < 0 or adj >= ndim:
+            raise ValueError(f"Axis {ax} is out of bounds for tensor with {ndim} dims.")
+        normalized.append(adj)
+    return tuple(sorted(set(normalized)))
 
-        N = len(x)
-        P = np.zeros(2)
-        xMat = np.zeros((m+1, N-m))
 
-        for i in range(m+1):
-            xMat[i, :] = x[i:N-m+i]
+@register("features", "normalize")
+class NormalizeFeature(FeatureFunction):
+    """Apply normalization along the specified axis/axes."""
 
-        for k in range(m, m+2):
-            count = np.zeros(N-m)
-            tempMat = xMat[:k, :]
+    def __init__(self,
+                 method: str = "zscore",
+                 axis: Optional[Union[int, Sequence[int]]] = -1,
+                 epsilon: float = 1e-8,
+                 keepdims: bool = True):
+        self.method = method.lower()
+        self.axis = axis
+        self.epsilon = float(epsilon)
+        self.keepdims = keepdims
+        self._supported = {"zscore", "minmax", "l2"}
+        if self.method not in self._supported:
+            raise ValueError(f"Unknown normalization method '{method}'.")
 
-            for i in range(N-k):
-                # Chebyshev distance (max abs difference)
-                dist = np.max(np.abs(tempMat[:, i+1:N-m] - tempMat[:, [i]]), axis=0)
-                D = (dist < r).astype(int)
-                count[i] = np.sum(D) / (N-m)
+    def compute(self, signal: np.ndarray = None, **kwargs) -> np.ndarray:
+        data = signal if signal is not None else kwargs.get("signal")
+        if data is None:
+            raise ValueError("NormalizeFeature requires a 'signal' array input.")
+        data = np.asarray(data, dtype=np.float64)
+        assert np.isfinite(data).all(), "Input data contains NaN or infinite values."
+        axes = _resolve_axes(self.axis, data.ndim)
 
-            P[k-m] = np.sum(count) / (N-m)
+        if self.method == "zscore":
+            mean = np.mean(data, axis=axes, keepdims=True)
+            std = np.std(data, axis=axes, ddof=0, keepdims=True)
+            assert np.all(self.epsilon < std), "Epsilon is larger than standard deviation, which may lead to instability."
+            normalized = (data - mean) / np.maximum(std, self.epsilon)
+        elif self.method == "minmax":
+            data_min = np.min(data, axis=axes, keepdims=True)
+            data_max = np.max(data, axis=axes, keepdims=True)
+            assert np.all(self.epsilon < (data_max - data_min)), "Epsilon is larger than data range, which may lead to instability."
+            normalized = (data - data_min) / (data_max - data_min)
+        else:  # l2
+            norm = np.sqrt(np.sum(np.square(data), axis=axes, keepdims=True))
+            normalized = data / np.maximum(norm, self.epsilon)
 
-        Out_SampEn = np.log(P[0] / P[1])
-        return Out_SampEn
+        if self.keepdims:
+            return normalized
+        reducer = tuple(ax for ax in axes)
+        return np.squeeze(normalized, axis=reducer)
 
-    def FuzEn(self, x, argument):
-        """
-        Fuzzy Entropy (FuzEn) of a univariate signal x.
 
-        Parameters
-        ----------
-        x : 1D array-like
-            Input signal
-        m : int
-            Embedding dimension
-        r : float
-            Threshold (commonly 0.15 * std(x))
-        n : float, optional
-            Fuzzy power (default=2)
-        tau : int, optional
-            Time lag (default=1)
+@register("features", "FeaturePipeline")
+class FeaturePipeline(FeatureFunction):
+    """Compose multiple registered features into a single configurable unit."""
 
-        Returns
-        -------
-        Out_FuzEn : float
-            The Fuzzy Entropy of x
-        P : list
-            [global quantity in dimension m, global quantity in dimension m+1]
-        """
-        m = argument["m"]
-        tau = argument["tau"]
-        r = argument["r"]
-        n = argument["n"]   
+    def __init__(self,
+                 steps: List[Dict[str, dict]],
+                 mode: str = "sequential",
+                 return_mode: str = "dict"):
+        if not steps:
+            raise ValueError("FeaturePipeline requires at least one step configuration.")
+        if mode not in {"parallel", "sequential"}:
+            raise ValueError("mode must be either 'parallel' or 'sequential'.")
+        if return_mode not in {"dict", "list", "last"}:
+            raise ValueError("return_mode must be 'dict', 'list', or 'last'.")
 
-        x = np.asarray(x, dtype=float)
+        self.mode = mode
+        self.return_mode = return_mode
+        self.stages = []
+        seen_ids = set()
 
-        if tau > 1:
-            x = x[::tau]  # downsample
+        for idx, step_cfg in enumerate(steps):
+            feature_name = step_cfg.get("name") or step_cfg.get("feature_name")
+            if feature_name is None:
+                raise ValueError("Each step must define 'name' or 'feature_name'.")
+            stage_id = step_cfg.get("id") or step_cfg.get("alias") or f"stage_{idx}"
+            if stage_id in seen_ids:
+                raise ValueError(f"Duplicate step id '{stage_id}' in FeaturePipeline.")
+            seen_ids.add(stage_id)
+            feature_args = step_cfg.get("args", {})
+            feature_instance = REGISTRIES["features"][feature_name](**feature_args)
+            self.stages.append({
+                "id": stage_id,
+                "feature": feature_instance,
+                "name": feature_name,
+            })
 
-        N = len(x)
-        P = np.zeros(2)
-        xMat = np.zeros((m+1, N-m))
+        self.stage_ids = [stage["id"] for stage in self.stages]
 
-        # Construct template matrix
-        for i in range(m+1):
-            xMat[i, :] = x[i:N-m+i]
+    def compute(self, signal: np.ndarray = None, **kwargs):
+        payload = dict(kwargs)
+        if signal is not None:
+            payload["signal"] = signal
+        elif "signal" not in payload:
+            raise ValueError("FeaturePipeline requires a 'signal' entry in the payload.")
 
-        # Loop for m and m+1
-        for k in range(m, m+2):
-            count = np.zeros(N-m)
-            tempMat = xMat[:k, :]
+        results: Dict[str, np.ndarray] = {}
 
-            for i in range(N-k):
-                # Chebyshev distance (max abs difference)
-                dist = np.max(np.abs(tempMat[:, i+1:N-m] - tempMat[:, [i]]), axis=0)
-                # Fuzzy membership function
-                DF = np.exp(-(dist**n) / r)
-                count[i] = np.sum(DF) / (N-m-1)
+        if self.mode == "parallel":
+            for stage in self.stages:
+                stage_payload = dict(payload)
+                results[stage["id"]] = stage["feature"].compute(**stage_payload)
+        else:  # sequential
+            current_payload = dict(payload)
+            for stage in self.stages:
+                outputs = stage["feature"].compute(**current_payload)
+                results[stage["id"]] = outputs
+                current_payload["signal"] = outputs
 
-            P[k-m] = np.sum(count) / (N-m)
+        return self._format_results(results)
 
-        Out_FuzEn = np.log(P[0] / P[1])
-        return Out_FuzEn
-    def LZC(x, argument):
-        """
-        Lempel-Ziv complexity of a univariate signal.
+    def _format_results(self, results: Dict[str, np.ndarray]):
+        if self.return_mode == "dict":
+            return results
+        if self.return_mode == "list":
+            return [results[key] for key in self.stage_ids]
+        if self.return_mode == "last":
+            return results[self.stage_ids[-1]]
+        raise RuntimeError("Unsupported return_mode encountered during execution.")
 
-        Parameters
-        ----------
-        signal : 1D array-like
-            Input signal
-        num_levels : int
-            Quantization levels (2 or 3)
 
-        Returns
-        -------
-        out : float
-            Lempel-Ziv complexity
-        P : ndarray
-            Quantized symbolic sequence
-        """
-        num_levels = argument["num_levels"]
-        signal = x
-        signal = np.asarray(signal, dtype=float)
-        med = np.median(signal)
+@register("features","TrialTrend")
+class TrialTrend(FeatureFunction):
+    """Compute per-trial feature trends for single-channel base features."""
 
-        # Quantization step
-        if num_levels == 2:
-            P = ((np.sign(signal - med) + 1) / 2).astype(int)
-        elif num_levels == 3:
-            P = np.zeros_like(signal, dtype=int)
-            max_val = np.abs(np.max(signal))
-            P[signal >= med + max_val / 16] = 2
-            P[signal <= med - max_val / 16] = 0
-            mask = (signal > med - max_val / 16) & (signal < med + max_val / 16)
-            P[mask] = 1
-        else:
-            raise ValueError("num_levels must be 2 or 3")
+    def __init__(self,
+                 feature_name: str,
+                 feature_args: Optional[dict],
+                 window_index: Sequence[int],
+                 channels: Optional[List[int]] = None):
+        self.feature_name = feature_name
+        feature_args = feature_args or {}
+        self.feature = REGISTRIES["features"][feature_name](**feature_args)
+        self.window_index = _normalize_window_index(window_index)
+        self.channels = list(channels) if channels else None
 
-        c = 2
-        terminate = False
-        r = 1
-        i = 1
+    def compute(self, signal: np.ndarray = None, **kwargs) -> np.ndarray:
+        if signal is None:
+            raise ValueError("TrialTrend requires `signal` with shape (S, C, E, T).")
+        if signal.ndim != 4:
+            raise ValueError("TrialTrend expects a 4D signal tensor (sessions, channels, epochs, samples).")
 
-        while not terminate:
-            S = P[:r]
-            Q = P[r:r+i]
+        n_sessions, n_channels, n_epochs, n_samples = signal.shape
+        start, end = self.window_index
+        if end > n_samples:
+            raise ValueError(
+                f"`window_index` end ({end}) exceeds signal length ({n_samples})."
+            )
 
-            # Check if Q exists in S+Q (excluding last symbol)
-            concat = np.concatenate([S, Q])
-            found = False
-            if len(Q) > 0:
-                for j in range(len(concat) - len(Q)):
-                    if np.array_equal(concat[j:j+len(Q)], Q):
-                        found = True
-                        break
+        channel_indices = self.channels if self.channels is not None else list(range(n_channels))
+        if not channel_indices:
+            raise ValueError("TrialTrend requires at least one channel index.")
 
-            if not found:
-                c += 1
-                r = r + i
-                i = 1
-            else:
-                i += 1
+        channel_indices = list(channel_indices)
+        base_shape = (n_sessions, len(channel_indices), n_epochs)
+        results = np.zeros(base_shape, dtype=float)
+        assert np.all(np.array(channel_indices) > -1) and np.all(np.array(channel_indices) < n_channels), "No valid channel indices provided."
 
-            if r + i == len(P):
-                terminate = True
 
-        out = c * np.log2(len(P)) / len(P)
-        return out
+
+        for session_idx in range(n_sessions):
+            for channel_pos, channel_idx in enumerate(channel_indices):
+                trial_windows = signal[session_idx, channel_idx, :, start:end]
+                for trial_idx in range(n_epochs):
+                    value = _ensure_numeric_array(self.feature.compute(trial_windows[trial_idx]))
+                    results[(session_idx, channel_pos, trial_idx)] = value
+
+        if results is None:
+            base_shape = (n_sessions, len(channel_indices), n_epochs)
+            return np.zeros(base_shape, dtype=float)
+        return results
+
+
+@register("features","TrialTrendPaired")
+class TrialTrendPaired(FeatureFunction):
+    """Per-trial trend computation for pairwise channel features."""
+
+    def __init__(self,
+                 feature_name: str,
+                 feature_args: Optional[dict],
+                 window_index: Sequence[int],
+                 channel_pairs: Optional[List[Tuple[int, int]]] = None,
+                 channelpairs: Optional[List[Tuple[int, int]]] = None):
+        feature_args = feature_args or {}
+        self.feature = REGISTRIES["features"][feature_name](**feature_args)
+        self.window_index = _normalize_window_index(window_index)
+
+        resolved_pairs = channel_pairs if channel_pairs else channelpairs
+        if not resolved_pairs:
+            raise ValueError("TrialTrendPaired requires `channel_pairs`/`channelpairs` entries.")
+        self.channel_pairs = [tuple(pair) for pair in resolved_pairs]
+        for pair in self.channel_pairs:
+            if len(pair) != 2:
+                raise ValueError("Each channel pair must contain exactly two indices.")
+
+    def compute(self, signal: np.ndarray = None, **kwargs) -> np.ndarray:
+        if signal is None:
+            raise ValueError("TrialTrendPaired requires `signal` with shape (S, C, E, T).")
+        if signal.ndim != 4:
+            raise ValueError("TrialTrendPaired expects a 4D signal tensor (sessions, channels, epochs, samples).")
+
+        n_sessions, n_channels, n_epochs, n_samples = signal.shape
+        start, end = self.window_index
+        if end > n_samples:
+            raise ValueError(
+                f"`window_index` end ({end}) exceeds signal length ({n_samples})."
+            )
+
+        n_pairs = len(self.channel_pairs)
+        results = np.zeros((n_sessions, n_pairs, n_epochs), dtype=float)
+        assert np.all(np.array(self.channel_pairs) >= 0) and np.all(np.array(self.channel_pairs) < n_channels), "No valid channel pairs provided."
+
+
+        for session_idx in range(n_sessions):
+            for pair_pos, (ch_x, ch_y) in enumerate(self.channel_pairs):
+
+                trials_x = signal[session_idx, ch_x, :, start:end]
+                trials_y = signal[session_idx, ch_y, :, start:end]
+                for trial_idx in range(n_epochs):
+                    value = _ensure_numeric_array(
+                        self.feature.compute(trials_x[trial_idx], trials_y[trial_idx])
+                    )
+
+                    results[(session_idx, pair_pos, trial_idx)] = value
+
+        if results is None:
+            base_shape = (n_sessions, n_pairs, n_epochs)
+            return np.zeros(base_shape, dtype=float)
+        return results
+
+
+# @register("features","Complexity")
+# class Complexity(FeatureFunction):
+#     """Backward-compatible wrapper around Complexity_base using TrialTrend."""
+
+#     def __init__(self,
+#                  complexity_type: str,
+#                  arguments: dict,
+#                  channels: List[int],
+#                  time_window: Tuple = (0,50)):
+#         feature_args = {"complexity_type": complexity_type, "arguments": arguments}
+#         self._delegate = TrialTrend(
+#             feature_name="Complexity_base",
+#             feature_args=feature_args,
+#             window_index=time_window,
+#             channels=channels,
+#         )
+
+#     def compute(self, signal: np.ndarray = None, **kwargs) -> np.ndarray:
+#         return self._delegate.compute(signal, **kwargs)
 
 
 @register("features","averageout")# Test
@@ -826,8 +999,6 @@ class AxisMappedFeature(FeatureFunction):
 
 
 
-
-
 #### Features for time-trial representation
 
 @register("features","TimeTrial")
@@ -866,6 +1037,7 @@ class TimeTrial(FeatureFunction):
         results = np.zeros((n_sessions, n_channels, n_epochs, n_windows), dtype=float)
      
         if self.parallel:
+            print("Parallel processing enabled for TimeTrial feature computation.")
             def compute_per_window(s,ch,e,w):
                 window_sampels = windows[w]
                 feature_window = self.feature.compute(signal[s,ch,e,window_sampels])
@@ -1201,7 +1373,7 @@ class EventWindowedFeature(FeatureFunction):
                 continue
 
             for i,ch in enumerate(self.channels):
-                epochs = selected[ch]  # (n_selected_epochs, n_samples)
+                epochs = selected[:,ch]  # (n_selected_epochs, n_samples)
                 feats = [self._compute_over_windows(ep) for ep in epochs]
                 out[s, i] = np.nanmean(np.vstack(feats), axis=0)
 
@@ -1306,8 +1478,6 @@ class EventWindowedFeature(FeatureFunction):
             for ch in self.channels
         )
         results = np.array(results)
-        np.save("/home/mohammad/Desktop/PiplineCodes/lfp_analysis_git/lfp_analysis/feature/debug_eventwindowedfeature_parallel.npy", results)
-        print("save debug_eventwindowedfeature_parallel.npy")
         return results.reshape(n_sessions, n_channels, n_windows)
 
     # --------------------------------------------------------------
@@ -1417,8 +1587,8 @@ class EventWindowedPairFeature(FeatureFunction):
             #     continue
 
             for idx, (ch1, ch2) in enumerate(self.channel_pairs):
-                epochs_x = selected[ch1]  # (n_selected_epochs, n_samples)
-                epochs_y = selected[ch2]
+                epochs_x = selected[:,ch1]  # (n_selected_epochs, n_samples)
+                epochs_y = selected[:,ch2]
 
                 feats = [self._compute_over_windows(epx, epy) for epx, epy in zip(epochs_x, epochs_y)]
                 out[s, idx] = np.nanmean(np.vstack(feats), axis=0)
@@ -1543,8 +1713,8 @@ class EventWindowedPairFeatureParallel(FeatureFunction):
             session_out = np.zeros((n_pairs, self._n_windows))
 
             for idx, (ch1, ch2) in enumerate(self.channel_pairs):
-                ex = selected[ch1]       # (epochs, samples)
-                ey = selected[ch2]
+                ex = selected[:,ch1]       # (epochs, samples)
+                ey = selected[:,ch2]
                 feats = [self._compute_over_windows(x, y) for x, y in zip(ex, ey)]
                 session_out[idx] = np.nanmean(np.vstack(feats), axis=0)
 
