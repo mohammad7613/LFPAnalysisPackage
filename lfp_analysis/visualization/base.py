@@ -116,6 +116,41 @@ def compute_error(data, axis=0, level=None):
         return mean, err
 
 
+def _movmean_same_length(data: np.ndarray, window: int) -> np.ndarray:
+    """Moving mean with adaptive edges so output length matches input."""
+    if window <= 1:
+        return data.astype(np.float64)
+
+    kernel = np.ones(window, dtype=np.float64)
+    data_float = data.astype(np.float64)
+    # Replace NaNs with 0 for convolution, track valid sample counts separately
+    numerators = np.apply_along_axis(
+        lambda row: np.convolve(np.nan_to_num(row, nan=0.0), kernel, mode="same"),
+        axis=1,
+        arr=data_float,
+    )
+    counts = np.apply_along_axis(
+        lambda row: np.convolve(np.isfinite(row).astype(np.float64), kernel, mode="same"),
+        axis=1,
+        arr=data_float,
+    )
+    with np.errstate(invalid="ignore", divide="ignore"):
+        smoothed = numerators / counts
+    smoothed[counts == 0] = np.nan
+    return smoothed
+
+def adaptive_movmean(row, window):
+    kernel = np.ones(window, dtype=np.float64)/window
+    numerators = np.convolve(np.nan_to_num(row, nan=0.0), kernel, mode="same")
+    counts = np.convolve(np.isfinite(row).astype(np.float64), kernel, mode="same")
+    result = np.divide(
+        numerators,
+        counts,
+        out=np.full_like(numerators, np.nan),
+        where=counts > 0,
+    )
+    return result
+
 
 
 def plot_grand_average_with_ci(
@@ -125,7 +160,8 @@ def plot_grand_average_with_ci(
     color: str = None,
     ax=None,
     m: int = 20, #window size parameter 
-    level: float = None # confidence interval
+    level: float = None, # confidence interval
+    edge_mode: str = "trim"
 ):
     """
     Plot the grand average of a 2D array with a 95% confidence interval.
@@ -142,6 +178,9 @@ def plot_grand_average_with_ci(
         Line color (default: automatic).
     ax : matplotlib.axes.Axes, optional
         The subplot axis to draw on. If None, uses the current global axis.
+    edge_mode : {"trim", "same"}
+        "trim" removes `m//2` samples at both ends after smoothing (previous behaviour).
+        "same" keeps the original length by averaging partial windows at the edges.
     """
 
     n_observations = data.shape[0]
@@ -149,11 +188,16 @@ def plot_grand_average_with_ci(
 
  # ---- Added movmean filter ----
     if m > 1:
-    # data shape: (n_observations, n_points), smooth along time axis (axis=1)
-        data_smoothed = uniform_filter1d(data.astype(np.float64), size=m, axis=1, mode="nearest")
-        temp = m//2
-        data_smoothed = data_smoothed[:,temp:-temp]
-        x = x[temp:-temp]
+        if edge_mode == "trim":
+            # data shape: (n_observations, n_points), smooth along time axis (axis=1)
+            data_smoothed = uniform_filter1d(data.astype(np.float64), size=m, axis=1, mode="nearest")
+            trim = m // 2
+            data_smoothed = data_smoothed[:, trim:-trim]
+            x = x[trim:-trim]
+        elif edge_mode == "same":
+            data_smoothed = np.apply_along_axis(adaptive_movmean, axis=1, arr=data, window=m)
+        else:
+            raise ValueError("edge_mode must be either 'trim' or 'same'.")
     else:
         data_smoothed = data.astype(np.float64)
 

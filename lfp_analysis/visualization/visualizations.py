@@ -265,6 +265,7 @@ class TrialDynamicFeatureVisualizer(Visualizer):
         feature_name = args.get("FeatureName", "Feature")
         level = args.get("CI",None)
         m = args.get("movemeansize", 1)
+        edge_mode = args.get("edge_mode","trim")
         title = args.get("title","")
         
         legends = args.get("legends", [])
@@ -311,7 +312,7 @@ class TrialDynamicFeatureVisualizer(Visualizer):
             for k, label in enumerate(legends):
                 # plot_grand_average_with_ci is your helper
                 plot_grand_average_with_ci(
-                    features[:, k, :], trial_number, ax=ax, label=label, m= m, level= level
+                    features[:, k, :], trial_number, ax=ax, label=label, m= m, level= level, edge_mode=edge_mode
                 )
 
             ax.legend()
