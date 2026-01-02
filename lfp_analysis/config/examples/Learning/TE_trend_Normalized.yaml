@@ -1,0 +1,220 @@
+datasets:
+  - id: "novelty"
+    format: "mat_events"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/EpochedData/Fix_Ch_Order_PreConfig_1_epoched_preprocessed_novelty0-raw_dataV3.mat"
+  - id: "complexity_rest"
+    format: "mat_cell"
+    path: "/media/mohammad/atp/D/ComplexityCheckCodes/RawData/PiplineCodes/Complexity/complexitySampeEnStandardizeChBaselineSessions.mat"
+
+
+preprocessors:
+  - id: "selectsession"
+    name: "selectsession"
+    args:
+      session_indexs: [8, 12, 16, 17, 29, 30, 1, 2, 3, 4, 5, 6, 7, 0]
+  - id: "zscore_norm"
+    name: "zscore"
+    args: {dim: -1}
+  - id: "selecttime"
+    name: "selecttime"
+    args:
+      start_index: 540
+      end_index: 3340 # up to 1 second
+
+
+
+
+
+features:
+  - id: "multi_feature_example_te_HC_Striatum"
+    name: "FeaturePipeline"
+    dataset: "novelty"
+    preprocessors: ["selectsession","selecttime","zscore_norm"]
+    args:
+      return_mode: "last"
+      steps:
+          - id: "te_temmporal_target"
+            name: "TrialTrendPaired"
+            args:
+              feature_name: "TE_base"
+              window_index: [800,1200]
+              channel_pairs: [[0,2]]
+              feature_args:
+                d_x: 1
+                d_y: 1
+                w_x: 15
+                w_y: 15
+          - id: "normalization"
+            name: "normalize"
+            args:
+               axis: -1
+
+  - id: "multi_feature_example_te_HC_mPFC"
+    name: "FeaturePipeline"
+    dataset: "novelty"
+    preprocessors: ["selectsession","selecttime","zscore_norm"]
+    args:
+      return_mode: "last"
+      steps:
+         - id: "te_temmporal_target"
+           name: "TrialTrendPaired"
+           args:
+              feature_name: "TE_base"
+              window_index: [800,1200]
+              channel_pairs: [[0,3]]
+              feature_args:
+                d_x: 1
+                d_y: 1
+                w_x: 15
+                w_y: 15
+         - id: "normalization"
+           name: "normalize"
+           args:
+               axis: -1
+  - id: "multi_feature_example_te_Striatum_mPFC"
+    name: "FeaturePipeline"
+    dataset: "novelty"
+    preprocessors: ["selectsession","selecttime","zscore_norm"]
+    args:
+      return_mode: "last"
+      steps:
+          - id: "te_temmporal_target"
+            name: "TrialTrendPaired"
+            args:
+              feature_name: "TE_base"
+              window_index: [800,1200]
+              channel_pairs: [[2,3]]
+              feature_args:
+                d_x: 1
+                d_y: 1
+                w_x: 15
+                w_y: 15
+          - id: "normalization"
+            name: "normalize"
+            args:
+               axis: -1
+
+  - id: "multi_feature_example_te_Striatum_HC"
+    name: "FeaturePipeline"
+    dataset: "novelty"
+    preprocessors: ["selectsession","selecttime","zscore_norm"]
+    args:
+      return_mode: "last"
+      steps:
+          - id: "te_temmporal_target"
+            name: "TrialTrendPaired"
+            args:
+              feature_name: "TE_base"
+              window_index: [800,1200]
+              channel_pairs: [[2,0]]
+              feature_args:
+                d_x: 1
+                d_y: 1
+                w_x: 15
+                w_y: 15
+          - id: "normalization"
+            name: "normalize"
+            args:
+               axis: -1
+
+  - id: "multi_feature_example_te_mPFC_HC"
+    name: "FeaturePipeline"
+    dataset: "novelty"
+    preprocessors: ["selectsession","selecttime","zscore_norm"]
+    args:
+      return_mode: "last"
+      steps:
+         - id: "te_temmporal_target"
+           name: "TrialTrendPaired"
+           args:
+              feature_name: "TE_base"
+              window_index: [800,1200]
+              channel_pairs: [[3,0]]
+              feature_args:
+                d_x: 1
+                d_y: 1
+                w_x: 15
+                w_y: 15
+         - id: "normalization"
+           name: "normalize"
+           args:
+               axis: -1
+  - id: "multi_feature_example_te_mPFC_Striatum"
+    name: "FeaturePipeline"
+    dataset: "novelty"
+    preprocessors: ["selectsession","selecttime","zscore_norm"]
+    args:
+      return_mode: "last"
+      steps:
+         - id: "te_temmporal_target"
+           name: "TrialTrendPaired"
+           args:
+              feature_name: "TE_base"
+              window_index: [800,1200]
+              channel_pairs: [[3,2]]
+              feature_args:
+                d_x: 1
+                d_y: 1
+                w_x: 15
+                w_y: 15
+         - id: "normalization"
+           name: "normalize"
+           args:
+               axis: -1 
+visualizers:
+  - name: "composite_visualizer"
+    args:
+      title: "TE Overview"
+      share_figure: true
+      tight_layout: true
+      layout:
+        rows: 1
+        cols: 3
+      figsize: [14, 5]
+    children:
+      - name: "trial_dynamic_feature_visualizer"
+        args: 
+          FeatureName: "Complexity_HC"
+          movemeansize: 10
+          edge_mode: "same" # Another mode is "trim"
+          title: "Complexity Trend Normalized"
+          legends: ["HC"]
+        inputs:
+          - feature: "multi_feature_example_te_Striatum_HC"
+          - feature: "multi_feature_example_te_HC_Striatum"
+      
+      - name: "trial_dynamic_feature_visualizer"
+        args: 
+          FeatureName: "Complexity_STR"
+          movemeansize: 10
+          edge_mode: "same" # Another mode is "trim"
+          title: "Complexity Trend Normalized"
+          legends: ["Striatum"]
+        inputs:
+          - feature: "multi_feature_example_te_HC_mPFC"
+          - feature: "multi_feature_example_te_mPFC_HC"
+     
+      - name: "trial_dynamic_feature_visualizer"
+        args: 
+          FeatureName: "Complexity_mPFC"
+          movemeansize: 10
+          edge_mode: "same" # Another mode is "trim"
+          title: "Complexity Trend Normalized"
+          legends: ["mPFC"]
+        inputs:
+          - feature: "multi_feature_example_te_Striatum_mPFC"
+          - feature: "multi_feature_example_te_mPFC_Striatum"
+
+
+
+
+
+# visualizers:
+#   - name: "time_dynamic_feature_visualizer"
+#     args: 
+#       FeatureName: "DPLI"
+#       legends: ["Straitum-mPFC"]
+#       xrange: [-0.2, 0.8]
+#     inputs:
+#       - feature: "dpli_temmporal_target"
+#       - feature: "dpli_temmporal_standard"
