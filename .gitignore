@@ -21,3 +21,5 @@ env/
 Tasks.md
 
 *.npy
+
+*.pkl

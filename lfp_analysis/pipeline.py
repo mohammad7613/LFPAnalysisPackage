@@ -1,8 +1,12 @@
+import os
+import warnings
+from typing import Any, Dict, List, Optional
+
 import numpy as np
-from typing import Dict, List, Any, Optional
+
+from lfp_analysis.cache import PipelineCache
 from lfp_analysis.registry.base import REGISTRIES
 from lfp_analysis.visualization.spec import build_visualization_spec, VisualizationSpec
-import warnings
 # Turn numpy warnings into exceptions so debugger can catch them
 np.seterr(all='raise')
 warnings.filterwarnings('error')
@@ -15,7 +19,17 @@ class LfpPipeline:
     according to a declarative config.
     """
 
-    def __init__(self, datasets_cfg, preprocessors_cfg, features_cfg, visualizers_cfg, storages_cfg):
+    def __init__(
+        self,
+        datasets_cfg,
+        preprocessors_cfg,
+        features_cfg,
+        visualizers_cfg,
+        storages_cfg,
+        *,
+        cache_enabled: bool = True,
+        cache_path: Optional[str] = None,
+    ):
         self.datasets_cfg = datasets_cfg
         self.preprocessors_cfg = preprocessors_cfg
         self.features_cfg = features_cfg
@@ -29,6 +43,19 @@ class LfpPipeline:
         self.preprocessors: Dict[str, Any] = {}
         self.features: Dict[str, Any] = {}
         self.results: Dict[str, Any] = {}
+        self.cache = PipelineCache(cache_path=cache_path, enabled=cache_enabled)
+        if self.cache.enabled:
+            datasets_snapshot = self._dataset_cache_snapshot()
+            self._cache_key = self.cache.build_fingerprint(
+                datasets_snapshot,
+                self.preprocessors_cfg,
+                self.features_cfg,
+            )
+            self._cached_feature_results = self.cache.get_pipeline_results(self._cache_key)
+        else:
+            self._cache_key = None
+            self._cached_feature_results = {}
+        self._cache_dirty = False
 
     # ------------------------------------------------------------------
     # BUILD STAGE
@@ -61,7 +88,15 @@ class LfpPipeline:
     def run(self):
         """Execute the pipeline graph."""
         # --- Compute features ---
+        cache_hits = 0
         for fid, fdict in self.features.items():
+            cached_result = self._cached_feature_results.get(fid)
+            if cached_result is not None:
+                fdict["result"] = cached_result
+                self.results[fid] = cached_result
+                cache_hits += 1
+                continue
+
             spec = fdict["spec"]
             dataset_id = spec["dataset"]
 
@@ -91,6 +126,18 @@ class LfpPipeline:
             fdict["result"] = fdict["instance"].compute(**payload)
                 
             self.results[fid] = fdict["result"]
+            if self.cache.enabled:
+                self._cached_feature_results[fid] = fdict["result"]
+                self._cache_dirty = True
+
+        if cache_hits and self.cache.enabled:
+            print(
+                f"[lfp-cache] Reused {cache_hits}/{len(self.features)} feature computations."
+            )
+
+        if self._cache_dirty:
+            self.cache.set_pipeline_results(self._cache_key, self._cached_feature_results)
+            self._cache_dirty = False
 
         # --- Run visualizers ---
         for vis_spec in self.visualizer_specs:
@@ -125,6 +172,21 @@ class LfpPipeline:
             {"id": inp["feature"], "data": self.results[inp["feature"]]}
             for inp in vis_spec.inputs
         ]
+
+    def _dataset_cache_snapshot(self) -> List[Dict[str, Any]]:
+        snapshot: List[Dict[str, Any]] = []
+        for dataset in self.datasets_cfg:
+            entry = dict(dataset)
+            path = entry.get("path")
+            if isinstance(path, str):
+                try:
+                    stat = os.stat(path)
+                    entry["_path_mtime_ns"] = stat.st_mtime_ns
+                    entry["_path_size"] = stat.st_size
+                except OSError:
+                    entry["_path_missing"] = True
+            snapshot.append(entry)
+        return snapshot
 
 
     # ------------------------------------------------------------------
